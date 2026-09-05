@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { FRONTMATTER_PARSE_ERROR, parseFrontmatter, stringField } from '../../server/utils/frontmatter'
 
 describe('parseFrontmatter', () => {
@@ -37,5 +37,24 @@ describe('parseFrontmatter', () => {
     expect(stringField({ name: 'x' }, 'name')).toBe('x')
     expect(stringField({ name: 3 }, 'name')).toBe('')
     expect(stringField({}, 'name')).toBe('')
+  })
+
+  it('handles CRLF line endings', () => {
+    const text = '---\r\nname: alpha\r\n---\r\n\r\n# Alpha\r\n'
+    const parsed = parseFrontmatter(text)
+    expect(parsed.data).toEqual({ name: 'alpha' })
+    expect(parsed.raw).toBe('name: alpha')
+    expect(parsed.content).toBe('# Alpha\n')
+  })
+
+  it('never logs frontmatter content on YAML warnings', () => {
+    const emitWarningSpy = vi.spyOn(process, 'emitWarning').mockImplementation(() => {})
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const parsed = parseFrontmatter('---\nname: !weird secret-value\n---\n\nBody.\n')
+    expect(emitWarningSpy).not.toHaveBeenCalled()
+    expect(consoleWarnSpy).not.toHaveBeenCalled()
+    expect(typeof parsed.data).toBe('object')
+    emitWarningSpy.mockRestore()
+    consoleWarnSpy.mockRestore()
   })
 })
