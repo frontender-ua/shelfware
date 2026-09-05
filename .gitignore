@@ -1,1 +1,11 @@
+node_modules
+.nuxt
+.output
+dist
+.data
+.env
+*.log
+.DS_Store
+coverage
+*.tgz
 shelfware-handoff.md

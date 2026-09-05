@@ -1,0 +1,47 @@
+{
+  "name": "shelfware",
+  "version": "0.1.0",
+  "description": "shelfware finds the shelfware in your skill drawers.",
+  "type": "module",
+  "bin": {
+    "shelfware": "bin/shelfware.mjs"
+  },
+  "files": [
+    "bin",
+    ".output"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:nuxt": "vitest run --project nuxt",
+    "test:e2e": "vitest run --project e2e",
+    "pack:verify": "node scripts/pack-verify.mjs",
+    "prepublishOnly": "pnpm build && pnpm test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@nuxt/test-utils": "^4.2.0",
+    "@nuxt/ui": "^4.11.0",
+    "@types/markdown-it": "^14.2.0",
+    "@vue/test-utils": "^2.5.0",
+    "@vueuse/core": "^14.4.0",
+    "happy-dom": "^20.14.0",
+    "markdown-it": "^14.3.1",
+    "nuxt": "^4.5.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "vue-tsc": "^3.3.11",
+    "yaml": "^2.9.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "vue-demi"]
+  }
+}
