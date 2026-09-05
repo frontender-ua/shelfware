@@ -3,7 +3,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { $fetch, fetch, setup, url } from '@nuxt/test-utils/e2e'
-import type { CatalogResponse, FilePreview, SkillDetail } from '../../shared/types/catalog'
+import type { CatalogResponse, DeleteResult, FilePreview, QuarantineResult, RestoreResult, SkillDetail } from '../../shared/types/catalog'
+import { readManifest } from '../../server/utils/quarantine'
 import { createFixtureHome, TWIN_TEXT } from '../helpers/fixture-home'
 import { rawRequest } from '../helpers/raw-http'
 
@@ -150,6 +151,100 @@ describe('shelfware api', async () => {
       const big = await fetch(url(`/api/skills/${keys.id}/file?path=big.txt`))
       expect(big.status).toBe(413)
       fs.rmSync(path.join(PATHS.keys, 'big.txt'))
+    })
+  })
+
+  function origin(): string {
+    return new URL(url('/')).origin
+  }
+
+  function mutate(path: string, body: unknown, overrides: { origin?: string | null, token?: string | null, contentType?: string } = {}) {
+    const headers: Record<string, string> = { 'Content-Type': overrides.contentType ?? 'application/json' }
+    const o = overrides.origin === undefined ? origin() : overrides.origin
+    if (o) headers.Origin = o
+    const t = overrides.token === undefined ? TOKEN : overrides.token
+    if (t) headers['X-Shelfware-Token'] = t
+    return fetch(url(path), { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) })
+  }
+
+  describe('mutation guard', () => {
+    it('rejects a mutation without Origin, with a foreign Origin, without token, with a wrong token', async () => {
+      expect((await mutate('/api/skills/quarantine', { ids: ['x'] }, { origin: null })).status).toBe(403)
+      expect((await mutate('/api/skills/quarantine', { ids: ['x'] }, { origin: 'http://evil.com' })).status).toBe(403)
+      const noToken = await mutate('/api/skills/quarantine', { ids: ['x'] }, { token: null })
+      expect(noToken.status).toBe(403)
+      expect(await noToken.json()).toEqual({ error: 'Missing or invalid session token' })
+      expect((await mutate('/api/skills/quarantine', { ids: ['x'] }, { token: `${TOKEN.slice(0, -1)}0` })).status).toBe(403)
+      const wrongPort = await mutate('/api/skills/quarantine', { ids: ['x'] }, { origin: 'http://127.0.0.1:1' })
+      expect(wrongPort.status).toBe(403)
+      expect(await wrongPort.json()).toEqual({ error: 'Cross-origin request blocked' })
+    })
+
+    it('accepts loopback Origin plus token and then applies the route rules', async () => {
+      for (const route of ['/api/skills/quarantine', '/api/skills/restore', '/api/skills/delete']) {
+        const empty = await mutate(route, { ids: [] })
+        expect(empty.status, route).toBe(400)
+        expect(await empty.json()).toEqual({ error: 'No cards selected' })
+      }
+      const unknown = await mutate('/api/skills/quarantine', { ids: ['nope'] })
+      expect(unknown.status).toBe(200)
+      expect(await unknown.json()).toEqual({ quarantined: [], errors: [{ id: 'nope', error: 'Skill not in the cabinet' }] })
+    })
+
+    it('rejects bodies over 1 MiB and malformed JSON', async () => {
+      const big = await mutate('/api/skills/quarantine', { ids: ['a'.repeat(1_100_000)] })
+      expect(big.status).toBe(413)
+      const bad = await mutate('/api/skills/quarantine', '{not json')
+      expect(bad.status).toBe(400)
+      expect(typeof (await bad.json()).error).toBe('string')
+    })
+
+    it('never sets CORS headers', async () => {
+      const health = await fetch(url('/api/health'), { headers: { Origin: 'http://evil.com' } })
+      expect(health.headers.get('access-control-allow-origin')).toBeNull()
+      const preflight = await fetch(url('/api/skills/delete'), {
+        method: 'OPTIONS',
+        headers: { 'Origin': 'http://evil.com', 'Access-Control-Request-Method': 'POST' },
+      })
+      for (const name of ['access-control-allow-origin', 'access-control-allow-methods', 'access-control-allow-headers', 'access-control-allow-credentials']) {
+        expect(preflight.headers.get(name), name).toBeNull()
+      }
+    })
+  })
+
+  describe('quarantine flow', () => {
+    it('quarantines bravo, shows it on the shelf with its record, and restores it to the exact path', async () => {
+      const before = await $fetch<CatalogResponse>('/api/skills?refresh=1')
+      const bravo = before.skills.find(s => s.slug === 'bravo')!
+
+      const moved = await (await mutate('/api/skills/quarantine', { ids: [bravo.id] })).json() as QuarantineResult
+      expect(moved.errors).toEqual([])
+      expect(moved.quarantined).toHaveLength(1)
+      expect(moved.quarantined[0]).toMatchObject({ id: bravo.id, name: 'bravo', from: PATHS.bravo })
+      expect(moved.quarantined[0]!.to).toBe(path.join(HOME, '.skill-cabinet', 'quarantine', 'codex', 'bravo'))
+      expect(fs.existsSync(PATHS.bravo)).toBe(false)
+
+      const during = await $fetch<CatalogResponse>('/api/skills')
+      expect(during.total).toBe(16)
+      expect(during.scopes.some(s => s.id === 'codex')).toBe(false)
+      const held = during.skills.find(s => s.slug === 'bravo')!
+      expect(held).toMatchObject({ quarantined: true, scopeId: 'quarantine', scopeLabel: 'Quarantine', fromScope: 'codex', kind: 'quarantine' })
+      expect(held.id).not.toBe(bravo.id)
+
+      const detail = await $fetch<SkillDetail>(`/api/skills/${held.id}`)
+      expect(detail.quarantinedFrom).toBe(PATHS.bravo)
+      expect(detail.quarantinedAt).toBeGreaterThan(0)
+      expect(readManifest({ home: HOME }).entries.some(e => e.originPath === PATHS.bravo)).toBe(true)
+
+      const back = await (await mutate('/api/skills/restore', { ids: [held.id] })).json() as RestoreResult
+      expect(back.errors).toEqual([])
+      expect(back.restored[0]).toMatchObject({ id: held.id, name: 'bravo', to: PATHS.bravo })
+      expect(fs.existsSync(path.join(PATHS.bravo, 'SKILL.md'))).toBe(true)
+      expect(readManifest({ home: HOME }).entries.some(e => e.originPath === PATHS.bravo)).toBe(false)
+
+      const after = await $fetch<CatalogResponse>('/api/skills')
+      expect(after.total).toBe(17)
+      expect(after.skills.find(s => s.slug === 'bravo')).toMatchObject({ id: bravo.id, quarantined: false, scopeId: 'codex' })
     })
   })
 })
