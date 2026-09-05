@@ -1,7 +1,7 @@
 # shelfware v0.1 — design spec
 
 **Date:** 2026-09-05
-**Status:** approved in brainstorm, ready for implementation planning
+**Status:** approved in brainstorm; cross-checked against the Nuxt 4 / Nuxt UI 4 docs on 2026-09-05 (§16); ready for implementation planning
 **Upstream reference:** skill-cabinet 0.6.0 (MIT), clone at `/Users/glua/develop/reference/skill-cabinet` (read-only)
 **Supersedes:** `shelfware-handoff.md` §8 (open questions) — resolved below. Handoff §2 (decisions) and §5 (security requirements) remain authoritative; this spec adds mechanics.
 
@@ -36,7 +36,7 @@ No network features, marketplace, SSR, i18n, desktop wrapper, project-level root
 | Quarantine root (handoff §2 typo) | `~/.skill-cabinet/quarantine/` with `quarantine.json` **inside** it | This is what upstream 0.6.0 actually uses; the handoff's `~/.skill-cabinet-quarantine/` was a transcription error. Compatibility is the intent. |
 | Scanner scope beyond handoff §3 | **Included**: loose `*.md` file skills, dangling symlinks as `broken` cards, physicality (`physical`/`reference`/`broken`), origin inference, invocation classification, Hermes profile roots | Upstream tests cover all of these; "tests define the contract" means they are in scope. |
 | Token header name | `X-Shelfware-Token` | Handoff wrote `X-Cabinet-Token`; the product is shelfware. Purely cosmetic. |
-| Token transport | `NUXT_PUBLIC_SHELFWARE_TOKEN` env → `runtimeConfig.public.shelfwareToken` | Verified in Nuxt 4.5 source: with `ssr: false` and `nuxt build`, `/` is not prerendered; Nitro's `getSPARenderer` runs per request and serialises `config.public` into the served HTML. No `render:html` hook needed. |
+| Token transport | `NUXT_PUBLIC_SHELFWARE_TOKEN` env → `runtimeConfig.public.shelfwareToken` | Verified against the Nuxt 4 docs (rendering modes, deployment: a plain `nuxt build` writes no `index.html`/`200.html`/`404.html`; only `nuxt generate` or `--prerender` does) and the 4.5.0 source: `@nuxt/nitro-server` registers those prerender routes only under `nitro.options.static`, and its SPA renderer (`runtime/utils/renderer/build-files`) reads `useRuntimeConfig(event)` per request and emits `window.__NUXT__.config` into the served HTML. No `render:html` hook needed. |
 | Fonts | `ui.fonts: false`, system font stack + monospace | Smaller tarball, no font download at build. |
 | Client state | Composables on `useState`, no Pinia | Single-page local tool. |
 
@@ -103,9 +103,12 @@ shelfware/
       catalog.ts
       guards.ts
       errors.ts                HttpError(status, message)
+  shared/
+    types/
+      catalog.ts               domain types of §4, auto-imported in both app/ and server/
   test/
     unit/                      vitest, node environment
-    component/                 vitest, nuxt environment (mountSuspended)
+    nuxt/                      vitest, nuxt environment (mountSuspended); the dir Nuxt adds to the app TS context
     e2e/                       @nuxt/test-utils/e2e against the built server
     fixtures/                  upstream-produced quarantine.json (templated), markdown XSS cases
     helpers/fixture-home.ts    builds a temporary HOME with all root shapes
@@ -117,7 +120,7 @@ shelfware/
 
 ### 3.2 Module map (server/utils)
 
-Each module has one purpose, a typed public surface, and no h3/Nitro imports.
+Each module has one purpose, a typed public surface, and no h3/Nitro imports. Domain types (§4) come from `shared/types/catalog.ts`; app code never imports from `server/`, and server code never imports from `app/` (Nuxt builds the two as separate bundles and forbids mixing them).
 
 | Module | Responsibility | Depends on |
 |---|---|---|
@@ -148,6 +151,8 @@ Each module has one purpose, a typed public surface, and no h3/Nitro imports.
 ---
 
 ## 4. Domain model
+
+Every type in this section lives in `shared/types/catalog.ts`. Nuxt auto-imports top-level files of `shared/types/` in both the app and the server context, and `shared/` code may import neither Vue nor Nitro code. Pure modules under `server/utils` and `app/utils` spell the dependency out as `import type { … } from '#shared/types/catalog'`: the import is erased at runtime, so the `unit` vitest project needs no alias, and Nuxt's TypeScript project references resolve it for type-checking.
 
 ### 4.1 Root
 
@@ -437,12 +442,14 @@ There is no `DELETE /api/skills/:id`; a test asserts it is 404.
 
 Handoff §5 lists the requirements; this is how each is met.
 
+Nitro loads `server/middleware/*` sorted by path (`localeCompare`), so `0.host.ts` always runs before `1.mutation.ts`. Both run before every scanned route and before the SPA renderer (`/**`, registered last), but after Nitro's static-asset handler, which is registered first. The Nuxt docs only promise "middleware runs before any other server route"; the ordering comes from the nitropack 2.13.4 source.
+
 ### 10.1 Host check — `server/middleware/0.host.ts` (every request)
 
 - Parse `Host` with `new URL('http://' + host)`; missing or unparsable → 403.
 - `hostname` must be `127.0.0.1`, `localhost`, or `[::1]` (URL keeps the brackets).
 - Expected port = `NITRO_PORT ?? PORT` when either is set (the bin always sets `NITRO_PORT`; `@nuxt/test-utils` sets `PORT`). When set, the header's port must equal it exactly; when unset (plain `nuxt dev`), the port is not checked.
-- Applies to `/api/**` and to `/` (the SPA shell that carries the token). Static `_nuxt/*` assets may be served by Nitro ahead of user middleware; they contain no user data, so this is acceptable and documented.
+- Applies to every request that reaches Nitro's handlers: `/api/**`, `/`, deep links such as `/skills/:id`, and anything else the SPA renderer serves (each of those responses carries the token). Nitro's static-asset handler runs ahead of all scanned middleware, so `_nuxt/*` and `public/` files are served before this check; they contain no user data, which is acceptable and documented.
 
 ### 10.2 Mutation guard — `server/middleware/1.mutation.ts` (methods other than GET/HEAD/OPTIONS)
 
@@ -452,9 +459,9 @@ Handoff §5 lists the requirements; this is how each is met.
 
 ### 10.3 Token
 
-- `bin/launch.mjs` → `makeToken()` = 32 random bytes as hex, exported as `NUXT_PUBLIC_SHELFWARE_TOKEN` before importing the server.
-- `nuxt.config.ts` declares `runtimeConfig.public.shelfwareToken: ''`. Nitro's SPA renderer serialises `config.public` into `window.__NUXT__` on every request, so the token lands in the served HTML and is read on the client via `useRuntimeConfig().public.shelfwareToken`.
-- `server/plugins/token.ts`: if the env var is empty at startup (dev), generate one and set `process.env.NUXT_PUBLIC_SHELFWARE_TOKEN` before the first request.
+- `bin/launch.mjs` → `makeToken()` = `sw_` + 32 random bytes as hex (67 chars), exported as `NUXT_PUBLIC_SHELFWARE_TOKEN` before importing the server. The letter prefix guarantees the value can never look numeric: Nitro casts env values with `destr`, and a digits-and-`e` string would arrive as a number (Nuxt docs, runtime config).
+- `nuxt.config.ts` declares `runtimeConfig.public.shelfwareToken: ''`. Nuxt's SPA renderer (`@nuxt/nitro-server`) reads `useRuntimeConfig(event)` per request and serialises `config.public` into `window.__NUXT__.config` in the served HTML, so the token is read on the client via `useRuntimeConfig().public.shelfwareToken`.
+- `server/plugins/token.ts`: if the env var is empty at startup (dev), generate one and set `process.env.NUXT_PUBLIC_SHELFWARE_TOKEN` before the first request. Only `useRuntimeConfig(event)` sees it: Nitro re-applies `NUXT_*` env per event on first access, while the argument-less `useRuntimeConfig()` is frozen at startup (nitropack 2.13.4 `runtime/internal/config`; the docs only say to pass `event`). All server code therefore passes `event`; the e2e token tests guard this.
 - A DNS-rebinding page cannot obtain the token: its request for `/` fails the Host check. A same-machine cross-origin page cannot read it: no CORS.
 
 ### 10.4 No CORS
@@ -478,7 +485,7 @@ Nitro's production logger is left at its default (no per-request body logging). 
 `app.vue` renders `<UApp>` → `<UDashboardGroup>` with:
 
 - `<UDashboardSidebar>` — **DrawerRail**: "All drawers" and one entry per scope with live counts; below, **CensusNote** (total, physical, unique, duplicates + wasted bytes, references, broken, ~tokens) as one cataloguing note, not a metrics row; at the bottom, the **Quarantine** shelf, excluded from "All" and from the census. Scope lives in the URL query `?scope=<id>` (`all` default).
-- `<UDashboardPanel>` **tray** — search `UInput` (`/` focuses it), three `USelect` filters (form: any/physical/reference/broken; risk: any/low+/medium+/high+/critical; invocation: any/hook/user/model/off) persisted in `localStorage` via VueUse `useLocalStorage`; bulk action bar (Quarantine on live shelves; Restore and Delete on the quarantine shelf); the card list; a footer with `UKbd` hints.
+- `<UDashboardPanel>` **tray** — search `UInput` (`/` focuses it), three `USelect` filters (form: any/physical/reference/broken; risk: any/low+/medium+/high+/critical; invocation: any/hook/user/model/off) persisted in `localStorage` via `useLocalStorage` imported explicitly from `@vueuse/core` (a direct devDependency; Nuxt UI's copy is transitive and invisible under pnpm); bulk action bar (Quarantine on live shelves; Restore and Delete on the quarantine shelf); the card list; a footer with `UKbd` hints.
 - `<UDashboardPanel>` **reader** — empty state on `/`; `SkillReader` on `/skills/:id`.
 
 Register: quiet, precise, librarian (upstream `DESIGN.md`). Status is always word + colour. Paths are monospace and wrap. Findings and inferred origin are labelled as evidence.
@@ -488,7 +495,7 @@ Register: quiet, precise, librarian (upstream `DESIGN.md`). Status is always wor
 - `pages/index.vue` and `pages/skills/[id].vue` share the layout; the tray persists across navigation. Selecting a card pushes `/skills/:id` and keeps `?scope`.
 - `useCatalog`: `catalog`, `loading`, `error`, `scopeId`, `query`, `filters`, `visible` (computed: scope → filters → `matchesQuery`), `marked: Set<string>`, `refresh(force?)`, `toggleMark(id)`, `markVisible()`. Switching between a live drawer and the quarantine shelf clears marks (`crossingQuarantineShelf`).
 - `useSkillDetail(id)`: `detail`, `preview`, `tab`, `load()`, `openFile(rel)`, `save(source)`.
-- `useApi`: `$fetch.create({ headers: { 'X-Shelfware-Token': token } })`; maps `{ error }` bodies to thrown `Error(message)`.
+- `useApi`: `$fetch.create({ headers: { 'X-Shelfware-Token': token } })` (the documented custom-fetcher pattern); maps `{ error }` bodies to thrown `Error(message)` in ofetch's `onResponseError` hook.
 
 ### 11.3 Cards and search
 
@@ -530,7 +537,7 @@ Built on Nuxt UI `defineShortcuts` (does not fire while typing; `meta` maps to `
 | `r` | open Restore slip (quarantine shelf only) |
 | `d` | open Delete slip (quarantine shelf only) |
 | `e` | switch the reader to the Edit tab |
-| `meta_s` | save (Edit tab, `usingInput: true`) |
+| `meta_s` | save (Edit tab, `usingInput: true`; the handler calls `e.preventDefault()` so the browser's Save dialog never opens) |
 | `escape` | close the slip; blur an input (`usingInput: true`) |
 
 The pure part (`nextSelection(visibleIds, currentId, delta)`) lives in `app/utils/shelf-actions.ts` and is unit-tested; the composable is component-tested (§12).
@@ -548,8 +555,10 @@ Nuxt UI colour mode (system / light / dark) toggle in the navbar. `ui.fonts: fal
 | Project | Environment | Scope |
 |---|---|---|
 | `unit` | node | `server/utils/**`, `app/utils/**`, `bin/launch.mjs` |
-| `component` | nuxt (`@nuxt/test-utils/runtime`, happy-dom) | `useShelfKeys`, `SkillEditor` dirty/409 flow |
-| `e2e` | `@nuxt/test-utils/e2e`, built server, `env: { HOME: <temp fixture home>, NUXT_PUBLIC_SHELFWARE_TOKEN: <known> }` | routes and security |
+| `nuxt` | nuxt (`@nuxt/test-utils/runtime`, happy-dom), files in `test/nuxt/` | `useShelfKeys`, `SkillEditor` dirty/409 flow |
+| `e2e` | node; `@nuxt/test-utils/e2e` against the built server, `setup({ env: { HOME: <temp fixture home>, NUXT_PUBLIC_SHELFWARE_TOKEN: <known> } })` | routes and security |
+
+`vitest.config.ts` follows the layout from the Nuxt testing docs: `defineConfig` from `vitest/config` with `test.projects`; the `nuxt` project wrapped in `await defineVitestProject(...)` from `@nuxt/test-utils/config`; `unit` and `e2e` as plain `environment: 'node'` projects. `test/nuxt/` is the directory Nuxt adds to the app TypeScript context, so component tests get `~/` aliases and auto-import types without extra config. All e2e suites share one `setup()` call (a single file, or a global setup that builds once and starts one server the suites reach via `host`), because every `setup()` rebuilds the app. `setup({ env })` is not in the docs' option list but is part of `@nuxt/test-utils` 4.x (`TestOptions.env`); the built server is started on `127.0.0.1` with `PORT`/`HOST` set and `env` spread over them, and the readiness probe fetches `/` on `127.0.0.1:<port>`, so it passes the Host check.
 
 ### 12.1 Fixture home (`test/helpers/fixture-home.ts`)
 
@@ -565,7 +574,7 @@ Builds a fresh temp HOME programmatically (symlinks do not survive git/npm): `.c
 - `markdown`: fixtures `<script>alert(1)</script>`, `<img src=x onerror=alert(1)>`, `[x](javascript:alert(1))`, `[x](data:text/html;base64,…)`, raw `<a href>` — output contains no `<script`, no `onerror`, no `javascript:`; tables and fenced code render.
 - `tokenEstimate`: `ceil(len/4)`, 0 for broken, census sum excludes quarantined and references.
 - `catalog`: TTL expiry, `force`, `invalidate`.
-- `launch`: `pickPort` skips occupied ports, `makeToken` is 64 hex chars and differs between calls.
+- `launch`: `pickPort` skips occupied ports, `makeToken` is `sw_` followed by 64 hex chars and differs between calls.
 
 ### 12.3 E2E tests
 
@@ -581,7 +590,7 @@ Builds a fresh temp HOME programmatically (symlinks do not survive git/npm): `.c
 - `PUT /api/skills/:id` happy path returns updated `contentHash`/`tokenEstimate`; stale `baseHash` → 409 with `currentHash`; invalid YAML in the new source → 200 with `frontmatter._parseError`.
 - `DELETE /api/skills/:id` → 404.
 
-### 12.4 Component tests
+### 12.4 Component tests (`test/nuxt/`)
 
 - `useShelfKeys`: keydown `j`/`k` moves selection with bounds, `x` toggles marks, keys do nothing while an input is focused, `q` is inert on the quarantine shelf, `d`/`r` inert on live shelves.
 - `SkillEditor`: typing sets dirty; Save calls the API with `baseHash`; 409 shows the Reload action and keeps the text.
@@ -615,17 +624,19 @@ Flags: `--port <n>` (also `PORT`), `--no-open` (also `SHELFWARE_NO_OPEN=1`). Ste
     "build": "nuxt build",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
-    "test:component": "vitest run --project component",
+    "test:nuxt": "vitest run --project nuxt",
     "test:e2e": "vitest run --project e2e",
     "pack:verify": "node scripts/pack-verify.mjs",
     "prepublishOnly": "pnpm build && pnpm test"
   },
   "dependencies": {},
-  "devDependencies": { "nuxt": "^4.5", "@nuxt/ui": "^4.9", "tailwindcss": "^4", "markdown-it": "^14", "yaml": "^2.8", "vitest": "latest stable", "@nuxt/test-utils": "latest stable", "happy-dom": "latest stable", "@types/markdown-it": "^14" }
+  "devDependencies": { "nuxt": "^4.5", "@nuxt/ui": "^4.9", "@vueuse/core": "^14", "tailwindcss": "^4", "markdown-it": "^14", "yaml": "^2.8", "vitest": "latest stable", "@nuxt/test-utils": "latest stable", "@vue/test-utils": "latest stable", "happy-dom": "latest stable", "@types/markdown-it": "^14" }
 }
 ```
 
 Runtime `dependencies` stay empty: Nitro bundles everything into `.output`, and the bin uses only built-ins. `.output` remains in `.gitignore`; it exists only in the published tarball.
+
+`@vue/test-utils` is a peer dependency of `@nuxt/test-utils` that `mountSuspended` wraps (the docs' install line includes it). `@vueuse/core` is imported directly by the app (§11.1); Nuxt UI 4.9 depends on the same `^14` range, so the two dedupe. `playwright-core` is not needed: there are no browser tests.
 
 `scripts/pack-verify.mjs`: `pnpm pack` → copy the tarball to a temp dir → `npx --yes ./shelfware-<v>.tgz --no-open --port <free>` → poll `/api/health` with the right `Host` → kill → exit 0/1. v0.1 is "done" only when this passes.
 
@@ -647,6 +658,8 @@ export default defineNuxtConfig({
 })
 ```
 
+`spaLoadingTemplate` stays unset; Nuxt would pick up `app/spa-loading-template.html` automatically if one is added later. `nitro.preset: 'node-server'` is already the default for `nuxt build` and is spelled out for clarity.
+
 ---
 
 ## 14. Suggested implementation order
@@ -667,3 +680,27 @@ Each phase ends green (tests pass) and is a sensible commit boundary for the pla
 ## 15. Deferred to v0.2
 
 Shiki highlighting for Source/Folio; `--root <path>` project-level drawers; frontmatter form (name/description + raw YAML remainder); CodeMirror editor; user-defined audit rules; Windows testing.
+
+---
+
+## 16. Framework facts verified on 2026-09-05
+
+Checked through the `nuxt` and `nuxt-ui` MCP servers (docs 4.x) and, where the docs are silent, the installed source of nuxt 4.5.0, `@nuxt/nitro-server` 4.5.0, nitropack 2.13.4, `@nuxt/test-utils` 4.0.3 and `@nuxt/ui` 4.9.0. Re-verify against the MCP before relying on any of these in code comments or the plan.
+
+| Fact | Source | Spec |
+|---|---|---|
+| A plain `nuxt build` writes no `index.html`/`200.html`/`404.html`; they appear only with `nuxt generate` or `--prerender` (`nitro.options.static`) | docs: rendering modes, deployment; source: `@nuxt/nitro-server` `prerender:routes` hook | §2, §10.3 |
+| The SPA renderer reads `useRuntimeConfig(event)` per request and emits `window.__NUXT__.config` | source: `@nuxt/nitro-server` `runtime/utils/renderer/build-files`, `payload` | §10.3 |
+| `server/middleware/*` run before every route, sorted by path; Nitro's static handler runs before them; the renderer `/**` is last | docs: server directory; source: nitropack `scanDir`, rollup handlers plugin | §10.1 |
+| `useRuntimeConfig(event)` re-applies `NUXT_*` env per event; the argument-less form is frozen at startup | docs: runtime config (recommendation only); source: nitropack `runtime/internal/config` | §10.3 |
+| Env overrides need the key declared in `runtimeConfig`, use `NUXT_` + `_`-separated upper-case, and are cast with `destr` | docs: runtime config | §10.3, §13.3 |
+| node-server honours `NITRO_PORT`/`PORT` and `NITRO_HOST`/`HOST`, default host `0.0.0.0`, and listens when the entry is imported | docs: deployment; source: nitropack `node-server` preset | §13.1 |
+| `@nuxt/test-utils` starts the built server on `127.0.0.1` with `PORT`/`HOST` and spreads `setup({ env })` over them; the readiness probe fetches `/` there | source: test-utils `startServer` (the `env` option is in the types, not in the docs list) | §10.1, §12 |
+| Vitest layout: `test.projects`, `defineVitestProject` for the nuxt environment, e2e as a node project; only `test/nuxt/` joins the Nuxt TS context; `"type": "module"` required | docs: testing | §12, §13.2 |
+| `mountSuspended` wraps `@vue/test-utils`, a peer dependency | docs: testing | §13.2 |
+| Top-level files in `shared/types/` are auto-imported in both contexts; `#shared` alias for the rest; `shared/` may import neither Vue nor Nitro code; app and server never import each other | docs: shared directory, server directory | §3, §4 |
+| Nuxt 4 default `srcDir` is `app/`, with `server/`, `shared/`, `public/` beside it | docs: nuxt.config `srcDir` | §3.1 |
+| `ui.fonts: false` disables `@nuxt/fonts`; `ui.colorMode` is on by default | docs: Nuxt UI installation, fonts | §11.9, §13.3 |
+| `defineShortcuts`: `meta` becomes `ctrl` off macOS; `usingInput` is `false` by default and `true` fires inside inputs; `escape` is a named key; the handler receives the `KeyboardEvent` | docs: Nuxt UI defineShortcuts | §11.8 |
+| `UDashboardGroup`/`UDashboardSidebar`/`UDashboardPanel` ship in Nuxt UI 4; `UTextarea` has an opt-in `autoresize` prop and passes native attributes through | docs: Nuxt UI components | §11.1, §11.6 |
+| `$fetch.create(...)` is the documented way to build a custom fetcher | docs: custom fetch recipe | §11.2 |
