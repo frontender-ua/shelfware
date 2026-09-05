@@ -189,12 +189,17 @@ export function quarantineRecordFor(quarantinePath: string, opts?: HomeOptions):
   return readManifest(opts).entries.find(entry => path.resolve(entry.quarantinePath) === target) || null
 }
 
+/**
+ * Drops the record for a quarantine path and tidies up after it. Callers reach
+ * here once the folder is already gone, so `readManifest` has filtered the
+ * entry out at read time — filtering alone never reaches the disk, and the
+ * manifest is therefore always rewritten and the emptied scope folder pruned.
+ */
 export function forgetQuarantinePath(target: string, opts?: HomeOptions): void {
   const resolved = path.resolve(target)
   if (!contained(resolved, quarantineRoot(opts))) return
   const manifest = readManifest(opts)
   const next = manifest.entries.filter(entry => path.resolve(entry.quarantinePath) !== resolved)
-  if (next.length === manifest.entries.length) return
   writeManifest({ ...manifest, entries: next }, opts)
   pruneScopeDir(path.dirname(resolved), opts)
 }

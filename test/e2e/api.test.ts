@@ -7,8 +7,10 @@ import type { CatalogResponse, DeleteResult, FilePreview, QuarantineResult, Rest
 import { readManifest } from '../../server/utils/quarantine'
 import { createFixtureHome, TWIN_TEXT } from '../helpers/fixture-home'
 import { rawRequest } from '../helpers/raw-http'
+import { installUpstreamFixture } from '../helpers/upstream-fixture'
 
 const FIXTURE = createFixtureHome()
+const UPSTREAM = installUpstreamFixture(FIXTURE.home)
 export const HOME = FIXTURE.home
 export const PATHS = FIXTURE.paths
 export const TOKEN = `sw_${'ab'.repeat(32)}`
@@ -245,6 +247,76 @@ describe('shelfware api', async () => {
       const after = await $fetch<CatalogResponse>('/api/skills')
       expect(after.total).toBe(17)
       expect(after.skills.find(s => s.slug === 'bravo')).toMatchObject({ id: bravo.id, quarantined: false, scopeId: 'codex' })
+    })
+  })
+
+  describe('delete semantics and upstream compatibility', () => {
+    it('restores an entry that skill-cabinet 0.6.0 quarantined', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills?refresh=1')
+      const held = catalog.skills.find(s => s.slug === 'upstream-held')!
+      expect(held).toMatchObject({ quarantined: true, fromScope: 'claude' })
+      const detail = await $fetch<SkillDetail>(`/api/skills/${held.id}`)
+      expect(detail.quarantinedFrom).toBe(UPSTREAM.originPath)
+      expect(detail.quarantinedAt).toBe(1757000000000)
+
+      const back = await (await mutate('/api/skills/restore', { ids: [held.id] })).json() as RestoreResult
+      expect(back.errors).toEqual([])
+      expect(back.restored[0]!.to).toBe(UPSTREAM.originPath)
+      expect(fs.existsSync(path.join(UPSTREAM.originPath, 'SKILL.md'))).toBe(true)
+      expect(fs.existsSync(UPSTREAM.quarantinePath)).toBe(false)
+      expect(readManifest({ home: HOME }).entries).toEqual([])
+
+      const after = await $fetch<CatalogResponse>('/api/skills')
+      expect(after.skills.find(s => s.slug === 'upstream-held')).toMatchObject({ quarantined: false, scopeId: 'claude' })
+    })
+
+    it('skips live cards unless force is set', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills?refresh=1')
+      const alpha = catalog.skills.find(s => s.slug === 'alpha')!
+
+      const refused = await (await mutate('/api/skills/delete', { ids: [alpha.id] })).json() as DeleteResult
+      expect(refused.deleted).toEqual([])
+      expect(refused.errors).toEqual([{ id: alpha.id, path: PATHS.alpha, error: 'Not quarantined; pass force to delete a live card' }])
+      expect(fs.existsSync(path.join(PATHS.alpha, 'SKILL.md'))).toBe(true)
+
+      const forced = await (await mutate('/api/skills/delete', { ids: [alpha.id], force: true })).json() as DeleteResult
+      expect(forced.errors).toEqual([])
+      expect(forced.deleted).toEqual([{ id: alpha.id, path: PATHS.alpha, name: 'alpha' }])
+      expect(fs.existsSync(PATHS.alpha)).toBe(false)
+    })
+
+    it('refuses to restore into an occupied path and deletes the held copy with its record', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills?refresh=1')
+      const gem = catalog.skills.find(s => s.slug === 'gem-one')!
+      const moved = await (await mutate('/api/skills/quarantine', { ids: [gem.id] })).json() as QuarantineResult
+      expect(moved.quarantined).toHaveLength(1)
+      fs.mkdirSync(PATHS.gemOne, { recursive: true })
+      fs.writeFileSync(path.join(PATHS.gemOne, 'SKILL.md'), '---\nname: gem-one\ndescription: reinstalled\n---\n\nNew.\n')
+
+      const during = await $fetch<CatalogResponse>('/api/skills?refresh=1')
+      const held = during.skills.find(s => s.slug === 'gem-one' && s.quarantined)!
+      const blocked = await (await mutate('/api/skills/restore', { ids: [held.id] })).json() as RestoreResult
+      expect(blocked.restored).toEqual([])
+      expect(blocked.errors[0]).toMatchObject({ id: held.id, path: held.path })
+      expect(blocked.errors[0]!.error).toMatch(/already at/)
+      expect(fs.existsSync(path.join(held.path, 'SKILL.md'))).toBe(true)
+
+      const gone = await (await mutate('/api/skills/delete', { ids: [held.id] })).json() as DeleteResult
+      expect(gone.errors).toEqual([])
+      expect(gone.deleted).toEqual([{ id: held.id, path: held.path, name: 'gem-one' }])
+      expect(fs.existsSync(held.path)).toBe(false)
+      expect(readManifest({ home: HOME }).entries.some(e => e.quarantinePath === held.path)).toBe(false)
+      expect(fs.existsSync(path.join(HOME, '.skill-cabinet', 'quarantine', 'gemini'))).toBe(false)
+    })
+
+    it('has no DELETE /api/skills/:id route', async () => {
+      const res = await rawRequest(url('/api/skills/nope'), {
+        method: 'DELETE',
+        headers: { 'Origin': origin(), 'X-Shelfware-Token': TOKEN, 'Content-Length': '0' },
+      })
+      expect(res.status).toBe(200)
+      expect(res.headers['content-type']).toMatch(/text\/html/)
+      expect(res.text).toContain('<div id="__nuxt"')
     })
   })
 })

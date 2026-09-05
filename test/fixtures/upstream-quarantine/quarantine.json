@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "quarantinePath": "{{HOME}}/.skill-cabinet/quarantine/claude/upstream-held",
+      "originPath": "{{HOME}}/.claude/skills/upstream-held",
+      "name": "upstream-held",
+      "slug": "upstream-held",
+      "scopeId": "claude",
+      "scopeLabel": ".claude",
+      "kind": "user",
+      "file": false,
+      "link": false,
+      "quarantinedAt": 1757000000000
+    }
+  ]
+}
