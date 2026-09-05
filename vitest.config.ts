@@ -3,10 +3,6 @@ import { defineVitestProject } from '@nuxt/test-utils/config'
 
 export default defineConfig({
   test: {
-    // Vitest 4 only honours `passWithNoTests` on the root config, not per project.
-    // The `unit` project has no tests until Task 3 and `nuxt` none until the client
-    // plan; drop this once both projects have test files.
-    passWithNoTests: true,
     projects: [
       {
         test: {
