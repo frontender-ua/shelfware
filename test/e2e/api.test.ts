@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { $fetch, fetch, setup, url } from '@nuxt/test-utils/e2e'
 import type { CatalogResponse, DeleteResult, FilePreview, QuarantineResult, RestoreResult, SkillDetail } from '../../shared/types/catalog'
 import { readManifest } from '../../server/utils/quarantine'
+import { tokenEstimateFor } from '../../server/utils/scan'
 import { createFixtureHome, TWIN_TEXT } from '../helpers/fixture-home'
 import { rawRequest } from '../helpers/raw-http'
 import { installUpstreamFixture } from '../helpers/upstream-fixture'
@@ -317,6 +318,85 @@ describe('shelfware api', async () => {
       expect(res.status).toBe(200)
       expect(res.headers['content-type']).toMatch(/text\/html/)
       expect(res.text).toContain('<div id="__nuxt"')
+    })
+  })
+
+  function put(path: string, body: unknown) {
+    return fetch(url(path), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Origin': origin(), 'X-Shelfware-Token': TOKEN },
+      body: JSON.stringify(body),
+    })
+  }
+
+  describe('editor', () => {
+    it('saves new source and returns the fresh detail', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills?refresh=1')
+      const negated = catalog.skills.find(s => s.slug === 'negated')!
+      const before = await $fetch<SkillDetail>(`/api/skills/${negated.id}`)
+      const source = `${before.source}\nMore body.\n`
+
+      const res = await put(`/api/skills/${negated.id}`, { source, baseHash: before.contentHash })
+      expect(res.status).toBe(200)
+      const after = await res.json() as SkillDetail
+      expect(after.id).toBe(negated.id)
+      expect(after.source).toBe(source)
+      expect(after.contentHash).not.toBe(before.contentHash)
+      expect(after.tokenEstimate).toBe(tokenEstimateFor(source))
+      expect(after.skillSize).toBe(Buffer.byteLength(source))
+      expect(after.body.endsWith('More body.\n')).toBe(true)
+      expect(fs.readFileSync(path.join(PATHS.negated, 'SKILL.md'), 'utf8')).toBe(source)
+      expect(fs.readdirSync(PATHS.negated).filter(n => n.endsWith('.tmp'))).toEqual([])
+
+      const listed = await $fetch<CatalogResponse>('/api/skills')
+      expect(listed.skills.find(s => s.id === negated.id)!.tokenEstimate).toBe(after.tokenEstimate)
+    })
+
+    it('rejects a stale baseHash with 409 and the current hash', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills')
+      const negated = catalog.skills.find(s => s.slug === 'negated')!
+      const current = await $fetch<SkillDetail>(`/api/skills/${negated.id}`)
+      const res = await put(`/api/skills/${negated.id}`, { source: 'stale write', baseHash: 'deadbeef' })
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({ error: 'File changed on disk since it was loaded', currentHash: current.contentHash })
+      expect(fs.readFileSync(path.join(PATHS.negated, 'SKILL.md'), 'utf8')).toBe(current.source)
+    })
+
+    it('reports a frontmatter parse error as a warning, never a blocker', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills')
+      const negated = catalog.skills.find(s => s.slug === 'negated')!
+      const current = await $fetch<SkillDetail>(`/api/skills/${negated.id}`)
+      const res = await put(`/api/skills/${negated.id}`, { source: '---\nname: [unclosed\n---\n\nBody.\n', baseHash: current.contentHash })
+      expect(res.status).toBe(200)
+      const after = await res.json() as SkillDetail
+      expect(after.frontmatter).toEqual({ _parseError: 'YAML frontmatter could not be parsed' })
+      expect(after.name).toBe('negated')
+      expect(after.body).toBe('Body.\n')
+    })
+
+    it('rejects broken cards, unknown ids and malformed bodies', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills')
+      const dead = catalog.skills.find(s => s.slug === 'dead')!
+      const broken = await put(`/api/skills/${dead.id}`, { source: 'x', baseHash: '' })
+      expect(broken.status).toBe(400)
+      expect(await broken.json()).toEqual({ error: 'Nothing to edit: the link target is gone' })
+
+      expect((await put('/api/skills/nope', { source: 'x', baseHash: 'y' })).status).toBe(404)
+
+      const bad = await put(`/api/skills/${dead.id}`, { source: 1 })
+      expect(bad.status).toBe(400)
+      expect(await bad.json()).toEqual({ error: 'Expected { source, baseHash }' })
+    })
+
+    it('still needs the mutation guard', async () => {
+      const catalog = await $fetch<CatalogResponse>('/api/skills')
+      const negated = catalog.skills.find(s => s.slug === 'negated')!
+      const res = await fetch(url(`/api/skills/${negated.id}`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Origin': origin() },
+        body: JSON.stringify({ source: 'x', baseHash: 'y' }),
+      })
+      expect(res.status).toBe(403)
     })
   })
 })
