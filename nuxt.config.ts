@@ -8,6 +8,8 @@ export default defineNuxtConfig({
   icon: { provider: 'none', clientBundle: { scan: true, includeCustomCollections: true, sizeLimitKb: 512 } },
   devtools: { enabled: false },
   nitro: { preset: 'node-server' },
+  // The published tarball ships .output; sourcemaps would only add weight to it.
+  sourcemap: { server: false, client: false },
   runtimeConfig: { public: { shelfwareToken: '' } },
   app: { head: { title: 'shelfware' } },
 })

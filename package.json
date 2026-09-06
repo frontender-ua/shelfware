@@ -2,6 +2,25 @@
   "name": "shelfware",
   "version": "0.1.0",
   "description": "shelfware finds the shelfware in your skill drawers.",
+  "keywords": [
+    "skills",
+    "agent-skills",
+    "claude",
+    "cursor",
+    "codex",
+    "catalog",
+    "cli",
+    "local"
+  ],
+  "author": "Grygorii Liashenko",
+  "homepage": "https://github.com/frontender-ua/shelfware#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontender-ua/shelfware.git"
+  },
+  "bugs": {
+    "url": "https://github.com/frontender-ua/shelfware/issues"
+  },
   "type": "module",
   "bin": {
     "shelfware": "bin/shelfware.mjs"
