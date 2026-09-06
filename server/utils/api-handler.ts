@@ -4,9 +4,12 @@ import { isHttpError } from './errors'
 
 /**
  * Spec §9: every response is JSON; errors are `{ error }`. HttpError keeps
- * its status and extra data (the editor's `currentHash`); h3 errors keep
- * their status (readBody's 400 on malformed JSON); anything else is a 500
- * with a generic message. Only the message is logged, never a body.
+ * its status and extra data (the editor's `currentHash`), with `error`
+ * always winning over a same-named data key; client-side h3 errors (status
+ * below 500, e.g. readBody's 400 on malformed JSON) keep their status and
+ * message. Everything else — including h3 errors at 500 and above, whose
+ * message may leak internals — becomes a generic 500. Only the message is
+ * logged, never a body.
  */
 export function defineApiHandler<T>(handler: (event: H3Event<EventHandlerRequest>) => T | Promise<T>): EventHandler {
   return defineEventHandler(async (event) => {
@@ -15,9 +18,9 @@ export function defineApiHandler<T>(handler: (event: H3Event<EventHandlerRequest
     } catch (err) {
       if (isHttpError(err)) {
         setResponseStatus(event, err.status)
-        return { error: err.message, ...(err.data ?? {}) }
+        return { ...(err.data ?? {}), error: err.message }
       }
-      if (isError(err)) {
+      if (isError(err) && err.statusCode < 500) {
         setResponseStatus(event, err.statusCode)
         return { error: err.message || err.statusMessage || 'Bad request' }
       }

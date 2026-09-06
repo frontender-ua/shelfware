@@ -3,6 +3,7 @@ import {
   expectedPort,
   isAllowedHost,
   isLoopbackOrigin,
+  isWellFormedToken,
   MAX_BODY_BYTES,
   parseHostHeader,
   tokenMatches,
@@ -88,6 +89,22 @@ describe('tokenMatches', () => {
     expect(tokenMatches('', token)).toBe(false)
     expect(tokenMatches('', '')).toBe(false)
     expect(tokenMatches(token, '')).toBe(false)
+  })
+})
+
+describe('isWellFormedToken', () => {
+  it('accepts only `sw_` plus 64 lowercase hex characters', () => {
+    const token = `sw_${'ab'.repeat(32)}`
+    expect(isWellFormedToken(token)).toBe(true)
+    expect(isWellFormedToken(undefined)).toBe(false)
+    expect(isWellFormedToken('')).toBe(false)
+    expect(isWellFormedToken(' ')).toBe(false)
+    expect(isWellFormedToken(` ${token} `)).toBe(false)
+    expect(isWellFormedToken(`sw_${'AB'.repeat(32)}`)).toBe(false)
+    expect(isWellFormedToken(token.slice(0, -1))).toBe(false)
+    expect(isWellFormedToken(`${token}a`)).toBe(false)
+    expect(isWellFormedToken('ab'.repeat(32))).toBe(false)
+    expect(isWellFormedToken(`sw_${'zz'.repeat(32)}`)).toBe(false)
   })
 })
 

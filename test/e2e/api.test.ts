@@ -170,6 +170,21 @@ describe('shelfware api', async () => {
     return fetch(url(path), { method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) })
   }
 
+  describe('unknown api paths', () => {
+    it('answers JSON 404 for an unknown top-level api path', async () => {
+      const res = await fetch(url('/api/nope'))
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'Not found' })
+    })
+
+    it('answers JSON 404 for an unknown nested api path, never the SPA shell', async () => {
+      const res = await fetch(url('/api/skills/x/y/z'))
+      expect(res.status).toBe(404)
+      expect(res.headers.get('content-type')).toMatch(/application\/json/)
+      expect(await res.json()).toEqual({ error: 'Not found' })
+    })
+  })
+
   describe('mutation guard', () => {
     it('rejects a mutation without Origin, with a foreign Origin, without token, with a wrong token', async () => {
       expect((await mutate('/api/skills/quarantine', { ids: ['x'] }, { origin: null })).status).toBe(403)
@@ -310,14 +325,13 @@ describe('shelfware api', async () => {
       expect(fs.existsSync(path.join(HOME, '.skill-cabinet', 'quarantine', 'gemini'))).toBe(false)
     })
 
-    it('has no DELETE /api/skills/:id route', async () => {
+    it('has no DELETE /api/skills/:id route (the api catch-all answers 404 JSON)', async () => {
       const res = await rawRequest(url('/api/skills/nope'), {
         method: 'DELETE',
         headers: { 'Origin': origin(), 'X-Shelfware-Token': TOKEN, 'Content-Length': '0' },
       })
-      expect(res.status).toBe(200)
-      expect(res.headers['content-type']).toMatch(/text\/html/)
-      expect(res.text).toContain('<div id="__nuxt"')
+      expect(res.status).toBe(404)
+      expect(JSON.parse(res.text)).toEqual({ error: 'Not found' })
     })
   })
 

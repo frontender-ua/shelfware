@@ -54,6 +54,13 @@ export function isLoopbackOrigin(origin: string | undefined, expected: string | 
   return portMatches(url.port, expected, url.protocol === 'https:' ? '443' : '80')
 }
 
+/** Spec §10.3: the session token is always `sw_` followed by 64 hex characters. */
+export const TOKEN_PATTERN = /^sw_[0-9a-f]{64}$/
+
+export function isWellFormedToken(value: string | undefined): boolean {
+  return typeof value === 'string' && TOKEN_PATTERN.test(value)
+}
+
 /** Constant-time comparison; length mismatch and empty values are always false. */
 export function tokenMatches(actual: string | undefined, expected: string): boolean {
   if (!actual || !expected) return false

@@ -3,7 +3,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { saveSkillSource, sha256 } from '../../server/utils/editor'
 import { scanRoots } from '../../server/utils/scan'
-import { createFixtureHome, skillText, writeSkill } from '../helpers/fixture-home'
+import { createFixtureHome, skillText, tempDir, writeSkill, writeTextFile } from '../helpers/fixture-home'
 
 const cleanups: (() => void)[] = []
 afterEach(() => {
@@ -64,6 +64,33 @@ describe('saveSkillSource', () => {
       expect.objectContaining({ status: 400, message: 'Skill file escapes its directory' }),
     )
     expect(fs.readFileSync(path.join(paths.linkedTarget, 'SKILL.md'), 'utf8')).not.toBe('x')
+  })
+
+  it('refuses a loose file skill symlinked outside the home directory', () => {
+    const { home, rescan, opts } = scanned()
+    const outside = tempDir('shelfware-outside-')
+    cleanups.push(() => fs.rmSync(outside, { recursive: true, force: true }))
+    const outsideFile = writeTextFile(path.join(outside, 'target.md'), skillText('escape', 'lives outside home'))
+    fs.symlinkSync(outsideFile, path.join(home, '.claude', 'skills', 'escape.md'))
+
+    const index = rescan()
+    const card = index.skills.find(s => s.slug === 'escape')!
+    expect(() => saveSkillSource(card, { source: 'x', baseHash: card.contentHash! }, index.roots, opts)).toThrow(
+      expect.objectContaining({ status: 400, message: 'Skill file escapes the home directory' }),
+    )
+    expect(fs.readFileSync(outsideFile, 'utf8')).not.toBe('x')
+    expect(leftovers(outside)).toEqual([])
+  })
+
+  it('still saves a reference card whose target stays inside home', () => {
+    const { paths, rescan, opts } = scanned()
+    const index = rescan()
+    const linked = index.skills.find(s => s.path === paths.linked)!
+    const source = skillText('x', 'edited through the link')
+    const result = saveSkillSource(linked, { source, baseHash: linked.contentHash! }, index.roots, opts)
+    const file = fs.realpathSync(path.join(paths.linkedTarget, 'SKILL.md'))
+    expect(result.path).toBe(file)
+    expect(fs.readFileSync(file, 'utf8')).toBe(source)
   })
 
   it('saves a loose file skill in place', () => {

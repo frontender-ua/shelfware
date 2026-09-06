@@ -30,6 +30,22 @@ describe('inferOrigin', () => {
     })
   })
 
+  it('strips embedded credentials from a url origin', () => {
+    const dir = skill('.claude/skills/s')
+    const ctx = createOriginContext(home)
+    const result = inferOrigin(dir, { source: 'https://user:s3cret@example.com/x/y' }, '', ctx)
+    expect(result).toMatchObject({ kind: 'url', label: 'example.com/x/y', url: 'https://example.com/x/y' })
+    expect(JSON.stringify(result)).not.toContain('s3cret')
+    expect(JSON.stringify(result)).not.toContain('user')
+
+    // A credentialed github url misses the github regex (the `@` breaks the
+    // `https://github.com` alternation) and falls to the generic branch, which
+    // still strips the credentials.
+    const gh = inferOrigin(dir, { source: 'https://tokenvalue@github.com/o/r' }, '', ctx)
+    expect(gh).toMatchObject({ kind: 'url', url: 'https://github.com/o/r' })
+    expect(JSON.stringify(gh)).not.toContain('tokenvalue')
+  })
+
   it('takes homepage and url only when they point at github', () => {
     const dir = skill('.claude/skills/s')
     const ctx = createOriginContext(home)

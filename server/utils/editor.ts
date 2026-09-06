@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import type { SaveRequest } from '#shared/types/catalog'
 import { fail } from './errors'
-import { assertSkillTarget, contained, realPath, type HomeOptions, type SkillSummary } from './scan'
+import { assertSkillTarget, contained, homeOf, realPath, type HomeOptions, type SkillSummary } from './scan'
 
 export interface SaveResult {
   path: string
@@ -14,9 +14,11 @@ export function sha256(data: Buffer | string): string {
 }
 
 /**
- * Spec §8: containment (assertSkillTarget, plus realpath(skillFile) inside
- * realpath(skillDir) for directory skills), optimistic hash check, then an
- * atomic tmp + chmod + rename write. The tmp file never survives a failure.
+ * Spec §8 + ruling R14: containment (assertSkillTarget, plus
+ * realpath(skillFile) inside realpath(skillDir) for directory skills, and —
+ * for every card, loose files included — the real write target must stay
+ * inside HOME), optimistic hash check, then an atomic tmp + chmod + rename
+ * write. The tmp file never survives a failure.
  */
 export function saveSkillSource(summary: SkillSummary, input: SaveRequest, roots: readonly { root: string }[], opts?: HomeOptions): SaveResult {
   if (summary.physicality === 'broken') throw fail(400, 'Nothing to edit: the link target is gone')
@@ -27,6 +29,7 @@ export function saveSkillSource(summary: SkillSummary, input: SaveRequest, roots
     const dir = realPath(summary.path)
     if (target === dir || !contained(target, dir)) throw fail(400, 'Skill file escapes its directory')
   }
+  if (!contained(target, realPath(homeOf(opts)))) throw fail(400, 'Skill file escapes the home directory')
 
   let current: Buffer
   let mode: number
@@ -45,7 +48,7 @@ export function saveSkillSource(summary: SkillSummary, input: SaveRequest, roots
 
   const tmp = `${target}.${process.pid}.tmp`
   try {
-    fs.writeFileSync(tmp, input.source, 'utf8')
+    fs.writeFileSync(tmp, input.source, { encoding: 'utf8', mode })
     fs.chmodSync(tmp, mode)
     fs.renameSync(tmp, target)
   } catch (err) {

@@ -57,6 +57,9 @@ function originFromText(raw: unknown): BareOrigin | null {
   try {
     const parsed = new URL(text)
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    // Never surface embedded credentials (`https://user:pass@host/…`) in the UI.
+    parsed.username = ''
+    parsed.password = ''
     const label = `${parsed.host}${parsed.pathname}`.replace(/\/+$/, '')
     return { kind: 'url', label, url: parsed.href }
   } catch {
