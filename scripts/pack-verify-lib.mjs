@@ -38,24 +38,42 @@ export function checkBundledIconBodies(publicDir) {
 /**
  * npm (>= 10) redacts anything UUID-shaped in its output as `***`, including the
  * Nuxt build-meta filename under .output/public/_nuxt/builds/meta/. Mask both sides
- * so the comparison is about which files ship, not about npm's redaction.
+ * so the comparison is about which files ship, not about npm's redaction. This hides
+ * UUID *names* only — it never hides a count difference: masking two distinct
+ * UUID-named files still leaves two entries, one per side, for packlistDiff to count.
  */
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
 function maskUuids(p) {
   return p.replace(UUID, '***')
 }
 
+/** Map of value → occurrence count, preserving insertion order of first sight. */
+function counts(values) {
+  const map = new Map()
+  for (const v of values) map.set(v, (map.get(v) ?? 0) + 1)
+  return map
+}
+
 /**
  * `npm publish` and `pnpm pack` build their file lists independently. Compare npm's
- * dry-run paths (relative to the package root) with the tarball entries (`package/…`).
+ * dry-run paths (relative to the package root) with the tarball entries (`package/…`)
+ * as multisets, so a masked name that appears a different number of times on each side
+ * — e.g. two UUID-named build-meta files on one side, one on the other — is caught even
+ * though masking makes the names themselves identical.
  */
 export function packlistDiff(npmPaths, tarEntries) {
-  const tar = new Set(tarEntries.map(entry => maskUuids(entry.replace(/^package\//, ''))))
-  const npm = new Set(npmPaths.map(maskUuids))
-  return {
-    onlyInNpm: [...npm].filter(p => !tar.has(p)).sort(),
-    onlyInTar: [...tar].filter(p => !npm.has(p)).sort(),
+  const tar = counts(tarEntries.map(entry => maskUuids(entry.replace(/^package\//, ''))))
+  const npm = counts(npmPaths.map(maskUuids))
+  const names = new Set([...npm.keys(), ...tar.keys()])
+  const onlyInNpm = []
+  const onlyInTar = []
+  for (const name of names) {
+    const n = npm.get(name) ?? 0
+    const t = tar.get(name) ?? 0
+    if (n > t) onlyInNpm.push(name)
+    else if (t > n) onlyInTar.push(name)
   }
+  return { onlyInNpm: onlyInNpm.sort(), onlyInTar: onlyInTar.sort() }
 }
 
 /** Newest mtime in ms under the given files and directories (recursive). Missing paths count as 0. */

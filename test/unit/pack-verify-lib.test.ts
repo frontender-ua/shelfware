@@ -82,6 +82,22 @@ describe('packlistDiff', () => {
       [`package/${meta}`, 'package/extra.json'],
     )).toEqual({ onlyInNpm: [], onlyInTar: ['extra.json'] })
   })
+
+  it('counts masked names, so an extra UUID-named file is caught even though the mask makes it look identical', () => {
+    const metaDir = '.output/public/_nuxt/builds/meta'
+    const a = `${metaDir}/f62e7192-9767-4b46-b33c-ae672684ec3c.json`
+    const b = `${metaDir}/0b1e2c3d-4f5a-6b7c-8d9e-0f1a2b3c4d5e.json`
+    // npm has two UUID-named meta files (both redacted to the same masked name), tar has one.
+    expect(packlistDiff(
+      [`${metaDir}/***.json`, `${metaDir}/***.json`, 'package.json'],
+      [`package/${a}`, 'package/package.json'],
+    )).toEqual({ onlyInNpm: [`${metaDir}/***.json`], onlyInTar: [] })
+    // Mirror case: tar has two, npm has one.
+    expect(packlistDiff(
+      [`${metaDir}/***.json`, 'package.json'],
+      [`package/${a}`, `package/${b}`, 'package/package.json'],
+    )).toEqual({ onlyInNpm: [], onlyInTar: [`${metaDir}/***.json`] })
+  })
 })
 
 describe('newestMtime', () => {
