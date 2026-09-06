@@ -17,11 +17,7 @@ onMounted(() => {
         <DrawerRail />
       </UDashboardSidebar>
 
-      <UDashboardPanel id="tray" resizable :default-size="34" :min-size="24" :max-size="50">
-        <template #body>
-          <p class="text-sm text-muted">The tray arrives in Task 5.</p>
-        </template>
-      </UDashboardPanel>
+      <SkillTray />
 
       <UDashboardPanel id="reader">
         <template #body>
