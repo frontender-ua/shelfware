@@ -19,6 +19,13 @@ export interface ShelfKeyOptions {
  * `usingInput`, `meta` becomes `ctrl` off macOS, and a `false` entry in the
  * reactive config disables that key (q on the quarantine shelf, r/d on live
  * shelves, all three while the slip is open).
+ *
+ * The letters are registered `layoutIndependent`, so they match the physical
+ * key (`e.code`, `x` -> `KeyX`) and fire in any keyboard layout — a Cyrillic
+ * layout reports `e.key === 'ч'` for the X key, which no letter would match.
+ * `/` and `escape` stay in the default, layout-dependent call: Nuxt UI maps a
+ * shortcut name to a code only for letters, digits and a handful of named keys,
+ * so `/` has no code form and would never match in layout-independent mode.
  */
 export function useShelfKeys(options: ShelfKeyOptions) {
   function move(delta: number): void {
@@ -40,25 +47,28 @@ export function useShelfKeys(options: ShelfKeyOptions) {
     const slipOpen = options.slipOpen.value
     const held = options.inQuarantine.value
     return {
-      '/': () => options.focusSearch(),
-      'j': () => move(1),
-      'k': () => move(-1),
-      'x': () => {
+      j: () => move(1),
+      k: () => move(-1),
+      x: () => {
         if (options.selectedId.value) options.toggleMark(options.selectedId.value)
       },
-      'q': slipOpen || held ? false : () => options.openSlip('quarantine'),
-      'r': slipOpen || !held ? false : () => options.openSlip('restore'),
-      'd': slipOpen || !held ? false : () => options.openSlip('delete'),
-      'e': () => options.openEditor(),
-      'escape': {
-        usingInput: true,
-        handler: () => {
-          if (options.slipOpen.value) options.closeSlip()
-          else blurActive()
-        },
-      },
+      q: slipOpen || held ? false : () => options.openSlip('quarantine'),
+      r: slipOpen || !held ? false : () => options.openSlip('restore'),
+      d: slipOpen || !held ? false : () => options.openSlip('delete'),
+      e: () => options.openEditor(),
     }
-  }))
+  }), { layoutIndependent: true })
+
+  defineShortcuts({
+    '/': () => options.focusSearch(),
+    'escape': {
+      usingInput: true,
+      handler: () => {
+        if (options.slipOpen.value) options.closeSlip()
+        else blurActive()
+      },
+    },
+  })
 
   return { move }
 }

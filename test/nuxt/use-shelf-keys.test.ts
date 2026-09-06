@@ -3,8 +3,12 @@ import { defineComponent, h, ref } from 'vue'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { useShelfKeys } from '~/composables/useShelfKeys'
 
-function press(key: string, target: EventTarget = document.body): void {
-  target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+/**
+ * `code` is the physical key. The letter shortcuts are registered with
+ * `layoutIndependent`, so they match on `e.code` and a `key`-only event misses.
+ */
+function press(key: string, target: EventTarget = document.body, code = ''): void {
+  target.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true }))
 }
 
 async function mountKeys(over: Partial<{ selectedId: string | undefined, inQuarantine: boolean, slipOpen: boolean }> = {}) {
@@ -42,13 +46,13 @@ describe('useShelfKeys', () => {
   it('j and k move the selection and clamp at the ends', async () => {
     const { wrapper, spies, state } = await mountKeys()
     wrappers.push(wrapper)
-    press('j')
+    press('j', document.body, 'KeyJ')
     expect(spies.select).toHaveBeenLastCalledWith('c')
     state.selectedId.value = 'c'
-    press('j')
+    press('j', document.body, 'KeyJ')
     expect(spies.select).toHaveBeenLastCalledWith('c')
     state.selectedId.value = 'a'
-    press('k')
+    press('k', document.body, 'KeyK')
     expect(spies.select).toHaveBeenLastCalledWith('a')
     expect(spies.select).toHaveBeenCalledTimes(3)
   })
@@ -56,10 +60,10 @@ describe('useShelfKeys', () => {
   it('x toggles the mark on the selected card only', async () => {
     const { wrapper, spies, state } = await mountKeys()
     wrappers.push(wrapper)
-    press('x')
+    press('x', document.body, 'KeyX')
     expect(spies.toggleMark).toHaveBeenCalledWith('b')
     state.selectedId.value = undefined
-    press('x')
+    press('x', document.body, 'KeyX')
     expect(spies.toggleMark).toHaveBeenCalledTimes(1)
   })
 
@@ -69,22 +73,22 @@ describe('useShelfKeys', () => {
     const input = wrapper.find('input').element as HTMLInputElement
     input.focus()
     expect(document.activeElement).toBe(input)
-    press('j', input)
-    press('x', input)
-    press('q', input)
+    press('j', input, 'KeyJ')
+    press('x', input, 'KeyX')
+    press('q', input, 'KeyQ')
     expect(spies.select).not.toHaveBeenCalled()
     expect(spies.toggleMark).not.toHaveBeenCalled()
     expect(spies.openSlip).not.toHaveBeenCalled()
-    press('Escape', input)
+    press('Escape', input, 'Escape')
     expect(document.activeElement).not.toBe(input)
   })
 
   it('q opens the quarantine slip on live shelves only; r and d only on the quarantine shelf', async () => {
     const live = await mountKeys({ inQuarantine: false })
     wrappers.push(live.wrapper)
-    press('q')
-    press('r')
-    press('d')
+    press('q', document.body, 'KeyQ')
+    press('r', document.body, 'KeyR')
+    press('d', document.body, 'KeyD')
     expect(live.spies.openSlip).toHaveBeenCalledTimes(1)
     expect(live.spies.openSlip).toHaveBeenCalledWith('quarantine')
     live.wrapper.unmount()
@@ -92,27 +96,46 @@ describe('useShelfKeys', () => {
 
     const held = await mountKeys({ inQuarantine: true })
     wrappers.push(held.wrapper)
-    press('q')
-    press('r')
-    press('d')
+    press('q', document.body, 'KeyQ')
+    press('r', document.body, 'KeyR')
+    press('d', document.body, 'KeyD')
     expect(held.spies.openSlip.mock.calls).toEqual([['restore'], ['delete']])
   })
 
   it('escape closes an open slip and slip keys are inert while it is open', async () => {
     const { wrapper, spies } = await mountKeys({ slipOpen: true })
     wrappers.push(wrapper)
-    press('q')
+    press('q', document.body, 'KeyQ')
     expect(spies.openSlip).not.toHaveBeenCalled()
-    press('Escape')
+    press('Escape', document.body, 'Escape')
     expect(spies.closeSlip).toHaveBeenCalledTimes(1)
   })
 
   it('/ focuses the search and e opens the editor', async () => {
     const { wrapper, spies } = await mountKeys()
     wrappers.push(wrapper)
-    press('/')
+    press('/', document.body, 'Slash')
     expect(spies.focusSearch).toHaveBeenCalledTimes(1)
-    press('e')
+    press('e', document.body, 'KeyE')
     expect(spies.openEditor).toHaveBeenCalledTimes(1)
+  })
+
+  it('letter keys work by physical key in a non-Latin layout', async () => {
+    const live = await mountKeys()
+    wrappers.push(live.wrapper)
+    // A Cyrillic layout reports the letter it prints, not the Latin one on the cap.
+    press('\u0447', document.body, 'KeyX')
+    expect(live.spies.toggleMark).toHaveBeenCalledWith('b')
+    press('\u043e', document.body, 'KeyJ')
+    expect(live.spies.select).toHaveBeenLastCalledWith('c')
+    press('/', document.body, 'Slash')
+    expect(live.spies.focusSearch).toHaveBeenCalledTimes(1)
+    live.wrapper.unmount()
+    wrappers.pop()
+
+    const held = await mountKeys({ inQuarantine: true })
+    wrappers.push(held.wrapper)
+    press('\u0432', document.body, 'KeyD')
+    expect(held.spies.openSlip).toHaveBeenCalledWith('delete')
   })
 })

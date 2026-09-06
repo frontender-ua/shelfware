@@ -86,6 +86,8 @@ function revert(): void {
 /**
  * Spec §11.8: meta_s saves from the Edit tab only. The editor stays mounted behind the
  * other reader tabs, so swallow the browser's Save dialog first, then bow out.
+ * `layoutIndependent` matches the physical S key, so ⌘S also saves in a non-Latin
+ * layout — a Cyrillic one reports `e.key === 'ы'` for that key.
  */
 defineShortcuts({
   meta_s: {
@@ -96,7 +98,7 @@ defineShortcuts({
       doSave()
     },
   },
-})
+}, { layoutIndependent: true })
 
 useEventListener(window, 'beforeunload', (e: BeforeUnloadEvent) => {
   if (!dirty.value) return

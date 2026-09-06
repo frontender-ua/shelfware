@@ -20,8 +20,8 @@ function detailWith(over: Partial<SkillDetail> = {}): SkillDetail {
 
 /** `defineShortcuts` maps `meta` to `ctrl` off macOS, so the event has to match the platform. */
 const MAC = /Macintosh;/.test(navigator.userAgent)
-function pressSave(target: EventTarget): void {
-  target.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: MAC, ctrlKey: !MAC, bubbles: true, cancelable: true }))
+function pressSave(target: EventTarget, key = 's'): void {
+  target.dispatchEvent(new KeyboardEvent('keydown', { key, code: 'KeyS', metaKey: MAC, ctrlKey: !MAC, bubbles: true, cancelable: true }))
 }
 
 function buttonNamed(wrapper: { findAll: (s: string) => { text(): string, trigger(e: string): Promise<void> }[] }, label: string) {
@@ -49,6 +49,12 @@ describe('SkillEditor', () => {
     pressSave(textarea)
     await flushPromises()
     expect(save).toHaveBeenCalledWith('new text', 'hash1')
+
+    // A Cyrillic layout reports \u044b for the physical S key; the shortcut still fires.
+    await wrapper.find('textarea').setValue('newer text')
+    pressSave(textarea, '\u044b')
+    await flushPromises()
+    expect(save).toHaveBeenLastCalledWith('newer text', 'hash2')
 
     tab.value = 'manuscript'
     wrapper.unmount()
