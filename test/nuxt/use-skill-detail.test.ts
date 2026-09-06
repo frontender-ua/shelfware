@@ -97,4 +97,21 @@ describe('useSkillDetail', () => {
     expect(d.preview.value).toBeNull()
     expect(d.previewError.value).toBe('')
   })
+
+  it('a failed reload keeps the current detail', async () => {
+    api.skill.mockImplementationOnce(id => Promise.resolve(detailOf(id)))
+    api.skill.mockImplementationOnce(() => Promise.reject(new Error('Skill not found')))
+
+    const id = ref<string | undefined>('a')
+    const wrapper = await mountSuspended(host(id))
+    const d = wrapper.vm.d
+    await flushPromises()
+    expect(d.detail.value?.id).toBe('a')
+
+    await d.reload().catch(() => {})
+    await flushPromises()
+
+    expect(d.detail.value?.id).toBe('a')
+    expect(d.error.value).toBe('')
+  })
 })

@@ -76,6 +76,29 @@ describe('SkillEditor', () => {
     expect(save).toHaveBeenLastCalledWith('my text', 'disk')
   })
 
+  it('a rejected reload keeps the text and the conflict alert', async () => {
+    const detail = detailWith()
+    const save = vi.fn(async (): Promise<SkillDetail> => {
+      throw new ApiError('File changed on disk since it was loaded', 409, { error: 'File changed on disk since it was loaded', currentHash: 'disk' })
+    })
+    const reload = vi.fn(async (): Promise<SkillDetail | null> => {
+      throw new Error('Skill not found')
+    })
+    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save, reload } })
+
+    await wrapper.find('textarea').setValue('my text')
+    await buttonNamed(wrapper, 'Save').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="conflict"]').exists()).toBe(true)
+
+    await buttonNamed(wrapper, 'Reload').trigger('click')
+    await flushPromises()
+
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('my text')
+    expect(wrapper.find('[data-testid="conflict"]').exists()).toBe(true)
+  })
+
   it('shows the frontmatter warning without blocking', async () => {
     const detail = detailWith({ frontmatter: { _parseError: 'YAML frontmatter could not be parsed' } })
     const wrapper = await mountSuspended(SkillEditor, { props: { detail, save: vi.fn(), reload: vi.fn() } })

@@ -37,11 +37,16 @@ function stamp(): string {
   return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date())
 }
 
+/** A failed reload (the file was renamed or removed) must never cost the user their text. */
 async function doReload(): Promise<void> {
-  const fresh = await props.reload()
-  if (!fresh) return
-  baseline.value = { source: fresh.source, hash: fresh.contentHash ?? '' }
-  conflict.value = null
+  try {
+    const fresh = await props.reload()
+    if (!fresh) return
+    baseline.value = { source: fresh.source, hash: fresh.contentHash ?? '' }
+    conflict.value = null
+  } catch (err) {
+    toast.add({ title: 'Reload failed', description: (err as Error).message, color: 'error' })
+  }
 }
 
 async function doSave(): Promise<void> {
@@ -97,7 +102,10 @@ useEventListener(window, 'beforeunload', (e: BeforeUnloadEvent) => {
 const leaveOpen = ref(false)
 let pendingLeave: ((ok: boolean) => void) | null = null
 
-/** The modal's buttons answer the pending guard; a plain call keeps the binding's type in the template. */
+/**
+ * The modal's buttons answer the pending guard; a plain call keeps the binding's type in the
+ * template. Tolerates a null `pendingLeave`, so every close path may call it unconditionally.
+ */
 function resolveLeave(ok: boolean): void {
   pendingLeave?.(ok)
 }
@@ -158,13 +166,19 @@ onBeforeRouteUpdate((_to, _from, next) => guard(next))
       :ui="{ base: 'font-mono text-sm leading-5' }"
     />
 
-    <UModal v-model:open="leaveOpen" title="Discard unsaved changes?" :dismissible="false">
+    <UModal
+      v-model:open="leaveOpen"
+      title="Discard unsaved changes?"
+      :dismissible="false"
+      :close="false"
+      @update:open="(v) => { if (!v) resolveLeave(false) }"
+    >
       <template #body>
         <p class="text-sm text-muted">The card has edits that are not on disk yet.</p>
       </template>
       <template #footer>
         <UButton color="neutral" variant="ghost" @click="resolveLeave(false)">Stay</UButton>
-        <UButton color="error" @click="resolveLeave(true)">Discard</UButton>
+        <UButton color="neutral" variant="solid" @click="resolveLeave(true)">Discard</UButton>
       </template>
     </UModal>
   </div>

@@ -56,9 +56,17 @@ export function useSkillDetail(id: Ref<string | undefined>) {
     return fresh
   }
 
+  /**
+   * Unlike `load`, a failed reload leaves `detail` and `error` alone and rethrows: the editor
+   * holds unsaved text, and blanking the detail would unmount it along with the user's draft.
+   */
   async function reload(): Promise<SkillDetail | null> {
-    await load()
-    return detail.value
+    if (!id.value) return null
+    const requested = id.value
+    const fresh = await api.skill(requested)
+    if (id.value !== requested) return null
+    detail.value = fresh
+    return fresh
   }
 
   watch(id, load, { immediate: true })
