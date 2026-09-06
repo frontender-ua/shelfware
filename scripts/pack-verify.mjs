@@ -1,4 +1,6 @@
 // Spec §13.2: v0.1 is done only when a clean `npx` of the packed tarball answers health.
+// POSIX-only (spec §15 defers Windows): the script spawns `npx` without a shell and
+// tears the child down with `process.kill(-pid)`, i.e. by POSIX process group.
 import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -12,6 +14,7 @@ const tarball = path.join(root, `shelfware-${pkg.version}.tgz`)
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'shelfware-pack-'))
 let child = null
 let code = 1
+let cleaned = false
 
 /** `tar -tzf` entries, normalised: no `./` prefix, no trailing slash, no blanks. */
 function listTarball(file) {
@@ -29,6 +32,47 @@ function hasBundledIconBodies(publicDir) {
     .filter(name => name.endsWith('.js'))
     .some(name => fs.readFileSync(path.join(publicDir, name), 'utf8').includes('<path '))
 }
+
+/** Kill the npx process group and remove both artefacts. Idempotent: `finally` and a signal may both call it. */
+function cleanup() {
+  if (cleaned) return
+  cleaned = true
+  if (child?.pid) {
+    try {
+      process.kill(-child.pid, 'SIGTERM')
+    } catch {
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        // the child is already gone
+      }
+    }
+    // Release the handle instead of exiting hard, so piped stdout is flushed in full.
+    child.unref()
+  }
+  // Each removal gets its own try/catch: a throw on the temp dir must not skip the tarball.
+  try {
+    fs.rmSync(work, { recursive: true, force: true, maxRetries: 3 })
+  } catch (err) {
+    console.error(`pack-verify: could not remove ${work}: ${err.message}`)
+  }
+  try {
+    fs.rmSync(tarball, { force: true, maxRetries: 3 })
+  } catch (err) {
+    console.error(`pack-verify: could not remove ${tarball}: ${err.message}`)
+  }
+}
+
+// A terminal SIGINT reaches only this script (the child sits in its own process group),
+// so without these the server, the temp dir and the .tgz would all survive a Ctrl-C.
+process.once('SIGINT', () => {
+  cleanup()
+  process.exit(130)
+})
+process.once('SIGTERM', () => {
+  cleanup()
+  process.exit(143)
+})
 
 try {
   if (!fs.existsSync(path.join(root, '.output', 'server', 'index.mjs'))) {
@@ -64,22 +108,22 @@ try {
     detached: true,
     env: { ...process.env, npm_config_yes: 'true' },
   })
-  const healthy = await waitForHealth(port, { timeoutMs: 90_000, intervalMs: 250 })
+  // spawn reports failure asynchronously; an unhandled 'error' would escape the try
+  // block and skip cleanup, so race it against the wait and fail the run properly.
+  const spawnFailed = new Promise((_, reject) => {
+    child.once('error', err => reject(new Error(`npx could not be spawned: ${err.message}`)))
+  })
+  const healthy = await Promise.race([
+    waitForHealth(port, { timeoutMs: 90_000, intervalMs: 250 }),
+    spawnFailed,
+  ])
   if (!healthy) throw new Error(`no healthy answer on 127.0.0.1:${port} within 90 s`)
   console.log(`pack-verify: shelfware ${pkg.version} answered on 127.0.0.1:${port} from a clean npx install`)
   code = 0
 } catch (err) {
   console.error(`pack-verify: ${err.message}`)
 } finally {
-  if (child?.pid) {
-    try {
-      process.kill(-child.pid, 'SIGTERM')
-    } catch {
-      child.kill('SIGTERM')
-    }
-  }
-  fs.rmSync(work, { recursive: true, force: true })
-  fs.rmSync(tarball, { force: true })
+  cleanup()
 }
 
-process.exit(code)
+process.exitCode = code
