@@ -7,7 +7,19 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { QuarantineEntry, QuarantineManifest, RootKind } from '#shared/types/catalog'
 import { fail } from './errors'
-import { assertSkillTarget, contained, isDir, quarantineRoot, type HomeOptions } from './scan'
+import { assertSkillTarget, contained, isDir, quarantineRoot, realPath, type HomeOptions } from './scan'
+
+/**
+ * The spelling a scanned card carries: a canonical parent directory plus the
+ * literal last segment, so a quarantined symlink is still named by the link
+ * and never by its target. Manifest entries need it because upstream
+ * skill-cabinet (and older builds of this one) write `quarantinePath` through
+ * a home that was never realpathed. Entries on disk are left as written.
+ */
+function canonicalPath(p: string): string {
+  const resolved = path.resolve(p)
+  return path.join(realPath(path.dirname(resolved)), path.basename(resolved))
+}
 
 export function manifestPath(opts?: HomeOptions): string {
   return path.join(quarantineRoot(opts), 'quarantine.json')
@@ -164,7 +176,7 @@ export function restoreSkill(summary: { path: string, quarantined?: boolean }, r
   if (!summary.quarantined || !contained(source, quarantineRoot(opts))) throw fail(400, 'Not a quarantined card')
 
   const manifest = readManifest(opts)
-  const entry = manifest.entries.find(item => path.resolve(item.quarantinePath) === source)
+  const entry = manifest.entries.find(item => canonicalPath(item.quarantinePath) === source)
   if (!entry) throw fail(409, 'No quarantine record says where this came from. Move it back by hand.')
 
   const dest = path.resolve(entry.originPath)
@@ -176,7 +188,7 @@ export function restoreSkill(summary: { path: string, quarantined?: boolean }, r
 
   move(source, dest)
   persistAfterMove(source, dest, () => {
-    manifest.entries = manifest.entries.filter(item => path.resolve(item.quarantinePath) !== source)
+    manifest.entries = manifest.entries.filter(item => canonicalPath(item.quarantinePath) !== source)
     writeManifest(manifest, opts)
     pruneScopeDir(path.dirname(source), opts)
   })
@@ -185,8 +197,8 @@ export function restoreSkill(summary: { path: string, quarantined?: boolean }, r
 }
 
 export function quarantineRecordFor(quarantinePath: string, opts?: HomeOptions): QuarantineEntry | null {
-  const target = path.resolve(quarantinePath)
-  return readManifest(opts).entries.find(entry => path.resolve(entry.quarantinePath) === target) || null
+  const target = canonicalPath(quarantinePath)
+  return readManifest(opts).entries.find(entry => canonicalPath(entry.quarantinePath) === target) || null
 }
 
 /**
@@ -196,10 +208,10 @@ export function quarantineRecordFor(quarantinePath: string, opts?: HomeOptions):
  * manifest is therefore always rewritten and the emptied scope folder pruned.
  */
 export function forgetQuarantinePath(target: string, opts?: HomeOptions): void {
-  const resolved = path.resolve(target)
+  const resolved = canonicalPath(target)
   if (!contained(resolved, quarantineRoot(opts))) return
   const manifest = readManifest(opts)
-  const next = manifest.entries.filter(entry => path.resolve(entry.quarantinePath) !== resolved)
+  const next = manifest.entries.filter(entry => canonicalPath(entry.quarantinePath) !== resolved)
   writeManifest({ ...manifest, entries: next }, opts)
   pruneScopeDir(path.dirname(resolved), opts)
 }

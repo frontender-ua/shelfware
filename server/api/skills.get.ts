@@ -1,8 +1,7 @@
-import os from 'node:os'
 import type { CatalogResponse, ScopeSummary } from '#shared/types/catalog'
 import { defineApiHandler } from '../utils/api-handler'
 import { getIndex, scannedAt } from '../utils/catalog'
-import { quarantineRoot, toCatalogSkill } from '../utils/scan'
+import { homeOf, quarantineRoot, toCatalogSkill } from '../utils/scan'
 
 export default defineApiHandler((event): CatalogResponse => {
   const force = getQuery(event).refresh === '1'
@@ -20,7 +19,7 @@ export default defineApiHandler((event): CatalogResponse => {
     scope.count += 1
   }
   return {
-    home: os.homedir(),
+    home: homeOf(),
     scannedAt: scannedAt(),
     quarantineRoot: quarantineRoot(),
     total: live.length,

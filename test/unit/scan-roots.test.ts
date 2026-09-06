@@ -6,6 +6,7 @@ import {
   describeInstall,
   discoverRoots,
   findSkillFile,
+  homeOf,
   idFor,
   isSkillFileName,
   quarantineRoot,
@@ -89,6 +90,20 @@ describe('path helpers', () => {
 
   it('quarantineRoot lives under home/.skill-cabinet/quarantine', () => {
     expect(quarantineRoot({ home: '/h' })).toBe(path.join('/h', '.skill-cabinet', 'quarantine'))
+  })
+
+  it('homeOf canonicalises a home reached through a symlink', () => {
+    const real = tempDir('shelfware-hreal-')
+    const parent = tempDir('shelfware-hlink-')
+    cleanups.push(() => {
+      fs.rmSync(real, { recursive: true, force: true })
+      fs.rmSync(parent, { recursive: true, force: true })
+    })
+    const link = path.join(parent, 'home')
+    fs.symlinkSync(real, link)
+
+    expect(homeOf({ home: link })).toBe(fs.realpathSync(link))
+    expect(quarantineRoot({ home: link }).startsWith(fs.realpathSync(link) + path.sep)).toBe(true)
   })
 })
 

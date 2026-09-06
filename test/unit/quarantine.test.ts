@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { assertDeletable, deleteSkillDir, quarantineRoot, scanSkills } from '../../server/utils/scan'
-import { forgetQuarantinePath, quarantineSkill, readManifest, restoreSkill, scopeFolder } from '../../server/utils/quarantine'
+import { assertDeletable, deleteSkillDir, quarantineRoot, realPath, scanSkills } from '../../server/utils/scan'
+import { forgetQuarantinePath, quarantineSkill, readManifest, restoreSkill, scopeFolder, writeManifest } from '../../server/utils/quarantine'
 import { tempDir } from '../helpers/fixture-home'
 
 const HOME = tempDir('shelfware-q-')
@@ -303,5 +303,84 @@ describe('quarantine (upstream contract)', () => {
       expect(occupied(path.join(moved.to, 'SKILL.md'))).toBe(true)
       expect(occupied(origin)).toBe(false)
     })
+  })
+})
+
+/**
+ * Regression: a HOME reached through a symlink, the way macOS `$TMPDIR`
+ * (`/var/…` → `/private/var/…`) hands one out. Scanned cards always carry
+ * canonical paths, so the quarantine root has to be canonical too or nothing
+ * a card says matches what the manifest holds.
+ */
+const LINK_HOME_REAL = tempDir('shelfware-qreal-')
+const LINK_HOME_PARENT = tempDir('shelfware-qlink-')
+const LINK_HOME = path.join(LINK_HOME_PARENT, 'home')
+const linkHomeOk = ((): boolean => {
+  try {
+    fs.symlinkSync(LINK_HOME_REAL, LINK_HOME, LINK_KIND ?? undefined)
+    return fs.lstatSync(LINK_HOME).isSymbolicLink()
+  } catch {
+    return false
+  }
+})()
+
+afterAll(() => {
+  fs.rmSync(LINK_HOME_REAL, { recursive: true, force: true })
+  fs.rmSync(LINK_HOME_PARENT, { recursive: true, force: true })
+})
+
+describe.skipIf(!linkHomeOk)('quarantine with a symlinked HOME', () => {
+  const linked = { home: LINK_HOME }
+
+  function heldCard(target: string) {
+    const index = scanSkills(linked)
+    const skill = index.skills.find(s => path.resolve(s.path) === realPath(target))!
+    return { index, skill }
+  }
+
+  it('restores a card quarantined through the symlinked home', () => {
+    const origin = writeSkill(path.join(LINK_HOME, '.agents', 'skills', 'alpha'), 'alpha')
+    const first = heldCard(origin)
+    expect(first.skill).toBeTruthy()
+
+    const moved = quarantineSkill(first.skill, first.index.roots, linked)
+    const held = heldCard(moved.to)
+    expect(held.skill?.quarantined).toBe(true)
+
+    const back = restoreSkill(held.skill, held.index.roots, linked)
+    expect(back.to).toBe(path.join(LINK_HOME_REAL, '.agents', 'skills', 'alpha'))
+    expect(occupied(path.join(back.to, 'SKILL.md'))).toBe(true)
+  })
+
+  it('forgets the record and prunes the scope folder after a permanent delete', () => {
+    const origin = writeSkill(path.join(LINK_HOME, '.claude', 'skills', 'bravo'), 'bravo')
+    const first = heldCard(origin)
+    const moved = quarantineSkill(first.skill, first.index.roots, linked)
+
+    const held = heldCard(moved.to)
+    const target = assertDeletable(held.skill, held.index.roots, linked)
+    deleteSkillDir(target)
+    forgetQuarantinePath(target, linked)
+
+    // The record has to leave the file on disk, not merely be filtered out on read.
+    const raw = fs.readFileSync(path.join(LINK_HOME_REAL, '.skill-cabinet', 'quarantine', 'quarantine.json'), 'utf8')
+    expect(raw).not.toContain('bravo')
+    expect(readManifest(linked).entries.some(e => e.slug === 'bravo')).toBe(false)
+    expect(occupied(path.join(LINK_HOME_REAL, '.skill-cabinet', 'quarantine', 'claude'))).toBe(false)
+  })
+
+  it('restores an entry whose manifest path uses the upstream spelling', () => {
+    const origin = writeSkill(path.join(LINK_HOME, '.codex', 'skills', 'charlie'), 'charlie')
+    const first = heldCard(origin)
+    const moved = quarantineSkill(first.skill, first.index.roots, linked)
+
+    const manifest = readManifest(linked)
+    const entry = manifest.entries.find(e => realPath(e.quarantinePath) === realPath(moved.to))!
+    entry.quarantinePath = path.join(LINK_HOME, '.skill-cabinet', 'quarantine', 'codex', path.basename(moved.to))
+    writeManifest(manifest, linked)
+
+    const held = heldCard(moved.to)
+    const back = restoreSkill(held.skill, held.index.roots, linked)
+    expect(back.to).toBe(path.join(LINK_HOME_REAL, '.codex', 'skills', 'charlie'))
   })
 })

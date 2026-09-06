@@ -18,8 +18,15 @@ export interface HomeOptions {
   home?: string
 }
 
+/**
+ * The canonical home directory. Every scanned root is realpathed, so the home
+ * has to be too: a `$HOME` reached through a symlink (macOS hands out
+ * `/var/…` for `/private/var/…`) would otherwise put the quarantine root in a
+ * different spelling than the cards it holds, and no containment check would
+ * ever match.
+ */
 export function homeOf(opts?: HomeOptions): string {
-  return path.resolve(opts?.home ?? os.homedir())
+  return realPath(path.resolve(opts?.home ?? os.homedir()))
 }
 
 /**
