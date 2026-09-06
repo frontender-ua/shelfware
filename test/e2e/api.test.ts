@@ -10,38 +10,43 @@ import { createFixtureHome, TWIN_TEXT } from '../helpers/fixture-home'
 import { rawRequest } from '../helpers/raw-http'
 import { installUpstreamFixture } from '../helpers/upstream-fixture'
 
-/**
- * Block order is an invariant: these blocks share one mutable fixture HOME and
- * run in source order, so a new block must be appended after `editor`.
- *
- * - `catalog` asserts whole-fixture counts (17 live cards, claude 11, gemini 2,
- *   the census totals) and therefore must run before any mutation block.
- * - `quarantine flow` moves `bravo` to the shelf and restores it, so it leaves
- *   the fixture as it found it.
- * - `delete semantics and upstream compatibility` is destructive: it force-deletes
- *   the live `alpha` for good, and it quarantines, re-creates on disk and then
- *   deletes `gem-one`.
- * - `editor` rewrites `negated`'s SKILL.md three times (save, stale-hash conflict,
- *   guard), so `negated`'s content hash and token estimate are not stable after it.
- *
- * A new block must not rely on `alpha` existing, nor on `gem-one` or `negated`
- * holding their original source.
- */
 const FIXTURE = createFixtureHome()
 const UPSTREAM = installUpstreamFixture(FIXTURE.home)
 export const HOME = FIXTURE.home
 export const PATHS = FIXTURE.paths
 export const TOKEN = `sw_${'ab'.repeat(32)}`
 
+/**
+ * Block order is an invariant: these blocks share one mutable fixture HOME and
+ * run in file order, so a new block must be appended after `editor`.
+ *
+ * - `catalog` asserts the pristine counts (17 live cards, claude 11, gemini 2,
+ *   and the census totals) and must run first, before any mutation.
+ * - `mutation guard` only probes rejections and empty batches; it never
+ *   mutates the fixture.
+ * - `quarantine flow` quarantines and restores `bravo`, leaving HOME back at
+ *   its pristine state.
+ * - `delete semantics and upstream compatibility` restores `upstream-held`
+ *   out of quarantine into `.claude/skills` (the manifest is empty
+ *   afterwards; `claude` now has 12 live cards), permanently deletes
+ *   `alpha`, and quarantines `gem-one`, re-creates a live `gem-one` on disk,
+ *   then deletes the quarantined copy.
+ * - `editor` writes `negated`'s SKILL.md twice (a save, then a save with
+ *   unparsable frontmatter), so its content hash and token estimate are not
+ *   stable afterwards.
+ *
+ * A new block must not rely on `alpha` existing, on `upstream-held` still
+ * being held, or on `negated` holding its original source.
+ */
 describe('shelfware api', async () => {
+  // Registered before setup() so vitest's stack-ordered afterAll runs it last, after @nuxt/test-utils has stopped the server.
+  afterAll(() => FIXTURE.cleanup())
+
   await setup({
     rootDir: fileURLToPath(new URL('../..', import.meta.url)),
     env: { HOME, NUXT_PUBLIC_SHELFWARE_TOKEN: TOKEN },
     setupTimeout: 300_000,
   })
-
-  // Runs after every inner hook, and after @nuxt/test-utils tears the server down.
-  afterAll(() => FIXTURE.cleanup())
 
   describe('health', () => {
     it('answers ok', async () => {
