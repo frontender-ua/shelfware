@@ -25,5 +25,7 @@ onMounted(() => {
         </template>
       </UDashboardPanel>
     </UDashboardGroup>
+
+    <ActionSlip />
   </UApp>
 </template>
