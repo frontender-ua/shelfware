@@ -4,5 +4,5 @@ const id = computed(() => String(route.params.id))
 </script>
 
 <template>
-  <pre class="font-mono text-xs">{{ id }}</pre>
+  <SkillReader :id="id" :key="id" />
 </template>
