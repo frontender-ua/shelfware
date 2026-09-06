@@ -2,14 +2,13 @@
 import type { BatchError } from '#shared/types/catalog'
 import { idsForShelfAction, type ShelfAction } from '~/utils/shelf-actions'
 
-const { slip, open, closeSlip } = useSlip()
+const { slip, open, busy, closeSlip } = useSlip()
 const { skills, catalog, selectedId, clearMarks, refresh } = useCatalog()
 const api = useApi()
 const toast = useToast()
 const route = useRoute()
 const router = useRouter()
 
-const busy = ref(false)
 const mode = computed<ShelfAction>(() => slip.value?.mode ?? 'quarantine')
 const quarantineRoot = computed(() => catalog.value?.quarantineRoot ?? '~/.skill-cabinet/quarantine')
 
@@ -105,6 +104,7 @@ async function confirm(): Promise<void> {
     if (selectedId.value && !skills.value.some(s => s.id === selectedId.value)) {
       await router.push({ path: '/', query: route.query })
     }
+    busy.value = false
     closeSlip()
   } catch (err) {
     toast.add({ title: (err as Error).message, color: 'error' })
