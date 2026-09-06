@@ -1,0 +1,63 @@
+# Release on a version tag: gate, publish to npm with provenance, then a GitHub Release.
+#
+# Flow: `pnpm version patch` → `git push --follow-tags` → this workflow.
+# npm needs a Trusted Publisher configured for this repository and workflow file
+# (npmjs.com → package settings → Trusted Publishers → GitHub Actions), so no
+# token or 2FA code is involved; `--provenance` links the npm version back to the
+# commit and this run.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # npm trusted publishing + provenance attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      # Trusted publishing needs npm 11.5+; Node 22 bundles an older one.
+      - run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Tag must match package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$version" ]; then
+            echo "tag v$tag does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm pack:verify
+
+      # prepublishOnly rebuilds and retests inside npm publish; the gate above already
+      # ran on this exact tree, so skip the duplicate work.
+      - run: npm publish --provenance --access public --ignore-scripts
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
