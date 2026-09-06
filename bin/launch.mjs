@@ -105,15 +105,18 @@ export async function waitForHealth(port, { timeoutMs = 10_000, intervalMs = 100
   return false
 }
 
-export function openBrowser(url, { platform = process.platform, spawn = spawnProcess } = {}) {
+export function openBrowser(url, { platform = process.platform, spawn = spawnProcess, env = process.env } = {}) {
   const cmd = platform === 'darwin' ? 'open' : platform === 'win32' ? 'cmd' : 'xdg-open'
   const args = platform === 'win32' ? ['/c', 'start', '', url] : [url]
+  // The opener execs the browser; strip the session token so it never sits in the
+  // browser's environment (the served page is the only place it belongs).
+  const { NUXT_PUBLIC_SHELFWARE_TOKEN: _token, ...childEnv } = env
   // A missing browser opener (e.g. no xdg-open on a headless box) must never take
   // the running server down with it: spawn can throw synchronously (rare) or emit
   // an async 'error' (the common ENOENT case), and an unhandled 'error' on an
   // EventEmitter is fatal. Swallow both.
   try {
-    const child = spawn(cmd, args, { stdio: 'ignore', detached: true })
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true, env: childEnv })
     child.on?.('error', () => {})
     child.unref?.()
   } catch {
@@ -175,6 +178,6 @@ export async function launch({
   }
   const url = `http://${HOST}:${port}`
   log(`shelfware at ${url}`)
-  if (args.open) openBrowser(url, { spawn })
+  if (args.open) openBrowser(url, { spawn, env })
   return { port, url }
 }

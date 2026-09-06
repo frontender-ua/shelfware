@@ -113,6 +113,18 @@ describe('health', () => {
     const never = vi.fn().mockResolvedValue(false)
     expect(await waitForHealth(1, { probe: never, intervalMs: 1, timeoutMs: 20 })).toBe(false)
   })
+
+  it('probeHealth sends the loopback Host header explicitly, not by Node default', async () => {
+    const { port } = await healthServer()
+    const get = vi.spyOn(http, 'get')
+    try {
+      expect(await probeHealth(port)).toBe(true)
+      expect(get).toHaveBeenCalledTimes(1)
+      expect(get.mock.calls[0]![0]).toMatchObject({ headers: { Host: `127.0.0.1:${port}` }, path: '/api/health' })
+    } finally {
+      get.mockRestore()
+    }
+  })
 })
 
 describe('openBrowser', () => {
@@ -141,6 +153,16 @@ describe('openBrowser', () => {
       throw new Error('spawn xdg-open ENOENT')
     })
     expect(() => openBrowser('http://127.0.0.1:1', { platform: 'linux', spawn })).not.toThrow()
+  })
+
+  it('hands the opener a copy of the environment without the session token', () => {
+    const spawn = vi.fn(() => ({ unref: vi.fn() }))
+    const env = { PATH: '/usr/bin', NUXT_PUBLIC_SHELFWARE_TOKEN: 'sw_secret' }
+    openBrowser('http://127.0.0.1:1', { platform: 'linux', spawn, env })
+    const options = spawn.mock.calls[0]![2] as { env: Record<string, string | undefined> }
+    expect(options.env).toEqual({ PATH: '/usr/bin' })
+    // The caller's object is untouched: the server still needs the token.
+    expect(env.NUXT_PUBLIC_SHELFWARE_TOKEN).toBe('sw_secret')
   })
 })
 
@@ -173,6 +195,9 @@ describe('launch', () => {
     expect(importServer).toHaveBeenCalledTimes(1)
     expect(log).toHaveBeenCalledWith(`shelfware at http://127.0.0.1:${result!.port}`)
     expect(spawn).toHaveBeenCalledTimes(1)
+    const openerEnv = (spawn.mock.calls[0]![2] as { env: Record<string, string | undefined> }).env
+    expect(openerEnv.NITRO_PORT).toBe(String(result!.port))
+    expect(openerEnv).not.toHaveProperty('NUXT_PUBLIC_SHELFWARE_TOKEN')
     expect(exit).not.toHaveBeenCalled()
   })
 
