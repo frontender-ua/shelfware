@@ -1,8 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
+import { shallowRef } from 'vue'
+import { matchedRouteKey } from 'vue-router'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { useRouter } from '#app'
 import type { SkillDetail } from '#shared/types/catalog'
 import SkillEditor from '~/components/SkillEditor.vue'
+
+type MountOptions = NonNullable<Parameters<typeof mountSuspended<typeof SkillEditor>>[1]>
+
+/**
+ * The editor registers `onBeforeRouteLeave`/`onBeforeRouteUpdate` to guard unsaved edits.
+ * Those look up the matched route record a `<RouterView>` injects; mounting the component
+ * on its own has none, so provide the one a real page would (otherwise vue-router warns R0020).
+ */
+function mountEditor(options: MountOptions) {
+  const record = useRouter().resolve('/').matched[0]
+  return mountSuspended(SkillEditor, {
+    ...options,
+    global: { ...options.global, provide: { ...options.global?.provide, [matchedRouteKey as symbol]: shallowRef(record) } },
+  })
+}
 import { useReaderTab } from '~/composables/useReaderTab'
 import { ApiError } from '~/utils/api-error'
 
@@ -34,7 +52,7 @@ describe('SkillEditor', () => {
   it('meta_s saves from the Edit tab only', async () => {
     const detail = detailWith()
     const save = vi.fn(async (source: string) => detailWith({ source, contentHash: 'hash2' }))
-    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save, reload: vi.fn() }, attachTo: document.body })
+    const wrapper = await mountEditor({ props: { detail, save, reload: vi.fn() }, attachTo: document.body })
     const textarea = wrapper.find('textarea').element
 
     await wrapper.find('textarea').setValue('new text')
@@ -63,7 +81,7 @@ describe('SkillEditor', () => {
   it('typing sets dirty and Save calls save with the baseline hash', async () => {
     const detail = detailWith()
     const save = vi.fn(async (source: string) => detailWith({ source, contentHash: 'hash2' }))
-    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save, reload: vi.fn(async () => detail) } })
+    const wrapper = await mountEditor({ props: { detail, save, reload: vi.fn(async () => detail) } })
 
     expect(wrapper.find('[data-testid="dirty"]').exists()).toBe(false)
     await wrapper.find('textarea').setValue('new text')
@@ -79,7 +97,7 @@ describe('SkillEditor', () => {
 
   it('Revert restores the baseline', async () => {
     const detail = detailWith()
-    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save: vi.fn(), reload: vi.fn() } })
+    const wrapper = await mountEditor({ props: { detail, save: vi.fn(), reload: vi.fn() } })
     await wrapper.find('textarea').setValue('scratch')
     await buttonNamed(wrapper, 'Revert').trigger('click')
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe(detail.source)
@@ -92,7 +110,7 @@ describe('SkillEditor', () => {
       throw new ApiError('File changed on disk since it was loaded', 409, { error: 'File changed on disk since it was loaded', currentHash: 'disk' })
     })
     const reload = vi.fn(async () => detailWith({ source: 'disk version', contentHash: 'disk' }))
-    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save, reload } })
+    const wrapper = await mountEditor({ props: { detail, save, reload } })
 
     await wrapper.find('textarea').setValue('my text')
     await buttonNamed(wrapper, 'Save').trigger('click')
@@ -120,7 +138,7 @@ describe('SkillEditor', () => {
     const reload = vi.fn(async (): Promise<SkillDetail | null> => {
       throw new Error('Skill not found')
     })
-    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save, reload } })
+    const wrapper = await mountEditor({ props: { detail, save, reload } })
 
     await wrapper.find('textarea').setValue('my text')
     await buttonNamed(wrapper, 'Save').trigger('click')
@@ -137,14 +155,14 @@ describe('SkillEditor', () => {
 
   it('shows the frontmatter warning without blocking', async () => {
     const detail = detailWith({ frontmatter: { _parseError: 'YAML frontmatter could not be parsed' } })
-    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save: vi.fn(), reload: vi.fn() } })
+    const wrapper = await mountEditor({ props: { detail, save: vi.fn(), reload: vi.fn() } })
     expect(wrapper.text()).toContain('Frontmatter could not be parsed')
     await wrapper.find('textarea').setValue('x')
     expect(buttonNamed(wrapper, 'Save')).toBeTruthy()
   })
 
   it('names the real write target for a symlinked card only', async () => {
-    const linked = await mountSuspended(SkillEditor, {
+    const linked = await mountEditor({
       props: {
         detail: detailWith({ link: true, linkTarget: '/h/repo/x', refTarget: '/h/repo/x/SKILL.md' }),
         save: vi.fn(),
@@ -154,7 +172,7 @@ describe('SkillEditor', () => {
     expect(linked.text()).toContain('Writes to')
     expect(linked.text()).toContain('/h/repo/x/SKILL.md')
 
-    const plain = await mountSuspended(SkillEditor, { props: { detail: detailWith(), save: vi.fn(), reload: vi.fn() } })
+    const plain = await mountEditor({ props: { detail: detailWith(), save: vi.fn(), reload: vi.fn() } })
     expect(plain.text()).not.toContain('Writes to')
   })
 })
