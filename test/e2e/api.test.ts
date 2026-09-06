@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it } from 'vitest'
 import { $fetch, fetch, setup, url } from '@nuxt/test-utils/e2e'
 import type { CatalogResponse, DeleteResult, FilePreview, QuarantineResult, RestoreResult, SkillDetail } from '../../shared/types/catalog'
 import { readManifest } from '../../server/utils/quarantine'
@@ -10,6 +10,23 @@ import { createFixtureHome, TWIN_TEXT } from '../helpers/fixture-home'
 import { rawRequest } from '../helpers/raw-http'
 import { installUpstreamFixture } from '../helpers/upstream-fixture'
 
+/**
+ * Block order is an invariant: these blocks share one mutable fixture HOME and
+ * run in source order, so a new block must be appended after `editor`.
+ *
+ * - `catalog` asserts whole-fixture counts (17 live cards, claude 11, gemini 2,
+ *   the census totals) and therefore must run before any mutation block.
+ * - `quarantine flow` moves `bravo` to the shelf and restores it, so it leaves
+ *   the fixture as it found it.
+ * - `delete semantics and upstream compatibility` is destructive: it force-deletes
+ *   the live `alpha` for good, and it quarantines, re-creates on disk and then
+ *   deletes `gem-one`.
+ * - `editor` rewrites `negated`'s SKILL.md three times (save, stale-hash conflict,
+ *   guard), so `negated`'s content hash and token estimate are not stable after it.
+ *
+ * A new block must not rely on `alpha` existing, nor on `gem-one` or `negated`
+ * holding their original source.
+ */
 const FIXTURE = createFixtureHome()
 const UPSTREAM = installUpstreamFixture(FIXTURE.home)
 export const HOME = FIXTURE.home
@@ -22,6 +39,9 @@ describe('shelfware api', async () => {
     env: { HOME, NUXT_PUBLIC_SHELFWARE_TOKEN: TOKEN },
     setupTimeout: 300_000,
   })
+
+  // Runs after every inner hook, and after @nuxt/test-utils tears the server down.
+  afterAll(() => FIXTURE.cleanup())
 
   describe('health', () => {
     it('answers ok', async () => {
