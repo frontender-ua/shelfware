@@ -50,7 +50,7 @@ Supply-chain scanners such as Socket.dev raise a few alerts on this package. Non
 - **"Dynamic code execution"** in `source-map-js` and the Vue compiler: `new Function` used by a sort routine and by Vue's template compiler. shelfware never compiles templates at runtime (`ssr: false`, no runtime compiler).
 - **"URL strings"**: the Iconify API hosts baked into `@nuxt/icon` (the provider is disabled and every icon is bundled), XML namespaces, documentation links in framework error messages, and file names such as `SKILL.md` that merely contain a dot.
 
-The launcher itself uses only Node built-ins, binds `127.0.0.1`, spawns nothing but your browser opener, and has no install scripts. `pnpm pack:verify` rebuilds, packs and runs the exact tarball through `npx` before every release, and releases are published from GitHub Actions with npm provenance.
+The launcher itself uses only Node built-ins, binds `127.0.0.1`, spawns nothing but your browser opener, and has no `preinstall`/`install`/`postinstall` scripts. `pnpm pack:verify` packs and runs the exact tarball through `npx` before every release, refusing to run against a stale build, and releases are published from GitHub Actions with npm provenance.
 
 ## Credits
 
