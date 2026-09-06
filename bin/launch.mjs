@@ -13,7 +13,7 @@ export const HOST = '127.0.0.1'
 
 export const HELP = `shelfware — a local catalog of the AI-agent skills on this machine
 
-Usage: shelfware [--port <n>] [--no-open]
+Usage: shelfware [--port <n>] [--no-open] [--help]
 
   --port <n>   bind 127.0.0.1:<n> instead of the first free port from ${DEFAULT_PORT}
   --no-open    do not open the browser (also SHELFWARE_NO_OPEN=1)
@@ -26,6 +26,15 @@ export function makeToken() {
   return `sw_${crypto.randomBytes(32).toString('hex')}`
 }
 
+/** The raw text stays in the message so `--port abc` reads back as "abc", not NaN. */
+function parsePort(raw) {
+  const port = Number(raw)
+  if (raw === '' || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
+  }
+  return port
+}
+
 export function parseArgs(argv = [], env = {}) {
   let port = null
   let open = env.SHELFWARE_NO_OPEN !== '1'
@@ -34,18 +43,18 @@ export function parseArgs(argv = [], env = {}) {
     if (arg === '--no-open') {
       open = false
     } else if (arg === '--port') {
-      port = Number(argv[i + 1])
+      if (i + 1 >= argv.length) throw new Error('--port needs a value')
+      port = parsePort(argv[i + 1])
       i += 1
     } else if (arg.startsWith('--port=')) {
-      port = Number(arg.slice('--port='.length))
+      port = parsePort(arg.slice('--port='.length))
     } else if (arg === '--help' || arg === '-h') {
       return { help: true, port: null, open }
+    } else {
+      throw new Error(`Unknown option: ${arg}`)
     }
   }
-  if (port === null && env.PORT) port = Number(env.PORT)
-  if (port !== null && (!Number.isInteger(port) || port < 1 || port > 65535)) {
-    throw new Error(`Invalid port: ${port}`)
-  }
+  if (port === null && env.PORT) port = parsePort(env.PORT)
   return { help: false, port, open }
 }
 
@@ -130,13 +139,26 @@ export async function launch({
   entry = serverEntry(),
   spawn = spawnProcess,
 } = {}) {
-  const args = parseArgs(argv, env)
+  let args
+  try {
+    args = parseArgs(argv, env)
+  } catch (err) {
+    log(`shelfware: ${err.message}`)
+    log(HELP)
+    exit(1)
+    return null
+  }
   if (args.help) {
     log(HELP)
     return null
   }
   if (!fs.existsSync(entry)) {
     log(`shelfware: missing ${entry}. This copy was not built; install the published package or run \`pnpm build\`.`)
+    exit(1)
+    return null
+  }
+  if (args.port !== null && !(await isPortFree(args.port))) {
+    log(`shelfware: port ${args.port} is already in use on ${HOST}; pick another with --port`)
     exit(1)
     return null
   }

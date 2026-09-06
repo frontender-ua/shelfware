@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import http from 'node:http'
 import net from 'node:net'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   HELP,
@@ -14,6 +15,9 @@ import {
   serverEntry,
   waitForHealth,
 } from '../../bin/launch.mjs'
+
+/** An existing file to stand in for `.output/server/index.mjs` in launch tests. */
+const ENTRY = fileURLToPath(import.meta.url)
 
 const servers: { close(): void }[] = []
 afterEach(() => {
@@ -59,9 +63,16 @@ describe('parseArgs', () => {
     expect(parseArgs(['--help'], {}).help).toBe(true)
   })
 
-  it('rejects a bad port', () => {
-    expect(() => parseArgs(['--port', 'abc'], {})).toThrow(/Invalid port/)
-    expect(() => parseArgs([], { PORT: '70000' })).toThrow(/Invalid port/)
+  it('rejects a bad port, a missing --port value and an unknown option', () => {
+    expect(() => parseArgs(['--port', 'abc'], {})).toThrow('Invalid port: "abc"')
+    expect(() => parseArgs([], { PORT: '70000' })).toThrow('Invalid port: "70000"')
+    expect(() => parseArgs(['--port=0'], {})).toThrow('Invalid port: "0"')
+    expect(() => parseArgs(['--port'], {})).toThrow('--port needs a value')
+    expect(() => parseArgs(['--prot', '4000'], {})).toThrow('Unknown option: --prot')
+  })
+
+  it('lists --help in the usage line', () => {
+    expect(HELP).toContain('Usage: shelfware [--port <n>] [--no-open] [--help]')
   })
 })
 
@@ -96,7 +107,7 @@ describe('health', () => {
   })
 
   it('waitForHealth polls until the probe says yes or the deadline passes', async () => {
-    const probe = vi.fn<[number, string], Promise<boolean>>().mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true)
+    const probe = vi.fn<(port: number, host: string) => Promise<boolean>>().mockResolvedValueOnce(false).mockResolvedValueOnce(false).mockResolvedValue(true)
     expect(await waitForHealth(1, { probe, intervalMs: 1, timeoutMs: 1000 })).toBe(true)
     expect(probe).toHaveBeenCalledTimes(3)
     const never = vi.fn().mockResolvedValue(false)
@@ -153,7 +164,7 @@ describe('launch', () => {
       servers.push(started)
       await new Promise<void>(resolve => started!.listen(port, env.NITRO_HOST, () => resolve()))
     })
-    const result = await launch({ argv: ['--port', String(await pickPort(4100))], env, importServer, log, exit, entry: __filename, spawn })
+    const result = await launch({ argv: ['--port', String(await pickPort(4100))], env, importServer, log, exit, entry: ENTRY, spawn })
     expect(result).not.toBeNull()
     expect(env.NUXT_PUBLIC_SHELFWARE_TOKEN).toMatch(/^sw_[0-9a-f]{64}$/)
     expect(env.NITRO_HOST).toBe('127.0.0.1')
@@ -176,6 +187,30 @@ describe('launch', () => {
 
     expect(await launch({ argv: ['--help'], env: {}, importServer, log })).toBeNull()
     expect(log).toHaveBeenCalledWith(HELP)
+  })
+
+  it('reports a bad flag with one line and the help text, never a stack trace', async () => {
+    const log = vi.fn()
+    const exit = vi.fn()
+    const importServer = vi.fn()
+    expect(await launch({ argv: ['--port', 'abc'], env: {}, importServer, log, exit, entry: ENTRY })).toBeNull()
+    expect(log).toHaveBeenNthCalledWith(1, 'shelfware: Invalid port: "abc"')
+    expect(log).toHaveBeenNthCalledWith(2, HELP)
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(importServer).not.toHaveBeenCalled()
+  })
+
+  it('refuses an explicit --port that is already taken before touching the server', async () => {
+    const { port } = await listen()
+    const log = vi.fn()
+    const exit = vi.fn()
+    const importServer = vi.fn()
+    const env: Record<string, string | undefined> = {}
+    expect(await launch({ argv: ['--port', String(port)], env, importServer, log, exit, entry: ENTRY })).toBeNull()
+    expect(log).toHaveBeenCalledWith(`shelfware: port ${port} is already in use on 127.0.0.1; pick another with --port`)
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(importServer).not.toHaveBeenCalled()
+    expect(env.NUXT_PUBLIC_SHELFWARE_TOKEN).toBeUndefined()
   })
 
   it('serverEntry points at .output/server/index.mjs beside bin/', () => {
