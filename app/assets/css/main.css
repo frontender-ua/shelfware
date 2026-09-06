@@ -1,6 +1,41 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+/*
+ * IBM Carbon Gray palette (v11) on Tailwind's stops: 50 = Gray 10 … 900 = Gray 100.
+ * The app uses only Nuxt UI's semantic tokens, so switching `neutral` to this scale
+ * restyles both colour modes: light = Carbon "Gray 10", dark = Carbon "Gray 100".
+ */
+@theme static {
+  --color-carbon-50: #f4f4f4;
+  --color-carbon-100: #e0e0e0;
+  --color-carbon-200: #c6c6c6;
+  --color-carbon-300: #a8a8a8;
+  --color-carbon-400: #8d8d8d;
+  --color-carbon-500: #6f6f6f;
+  --color-carbon-600: #525252;
+  --color-carbon-700: #393939;
+  --color-carbon-800: #262626;
+  --color-carbon-900: #161616;
+  --color-carbon-950: #0b0b0b;
+}
+
+/* Dark mode: Carbon's layering. Background Gray 100, first layer Gray 90, borders Gray 80. */
+.dark {
+  --ui-bg: var(--ui-color-neutral-900);
+  --ui-bg-muted: var(--ui-color-neutral-800);
+  --ui-bg-elevated: var(--ui-color-neutral-800);
+  --ui-bg-accented: var(--ui-color-neutral-700);
+  --ui-border: var(--ui-color-neutral-700);
+  --ui-border-muted: var(--ui-color-neutral-800);
+  --ui-border-accented: var(--ui-color-neutral-600);
+  --ui-text-highlighted: var(--ui-color-neutral-50);
+  --ui-text: var(--ui-color-neutral-100);
+  --ui-text-toned: var(--ui-color-neutral-200);
+  --ui-text-muted: var(--ui-color-neutral-300);
+  --ui-text-dimmed: var(--ui-color-neutral-400);
+}
+
 /* Spec §11.5: the rendered manuscript. Quiet, readable measure, no chrome. */
 .prose {
   max-width: 68ch;
