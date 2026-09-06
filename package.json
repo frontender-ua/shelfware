@@ -16,7 +16,7 @@
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
-    "postinstall": "nuxt prepare",
+    "prepare": "nuxt prepare",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
     "test:unit": "vitest run --project unit --passWithNoTests",
@@ -25,6 +25,7 @@
     "pack:verify": "node scripts/pack-verify.mjs",
     "prepublishOnly": "pnpm build && pnpm test"
   },
+  "dependencies": {},
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.129",
     "@nuxt/test-utils": "^4.2.0",
