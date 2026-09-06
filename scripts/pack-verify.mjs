@@ -7,6 +7,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { pickPort, waitForHealth } from '../bin/launch.mjs'
+import {
+  checkBundledIconBodies,
+  missingEntries,
+  newestMtime,
+  packlistDiff,
+  parseTarListing,
+  topLevelNodeModules,
+} from './pack-verify-lib.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
@@ -16,21 +24,9 @@ let child = null
 let code = 1
 let cleaned = false
 
-/** `tar -tzf` entries, normalised: no `./` prefix, no trailing slash, no blanks. */
-function listTarball(file) {
-  return execFileSync('tar', ['-tzf', file], { encoding: 'utf8' })
-    .split('\n')
-    .map(line => line.trim().replace(/^\.\//, '').replace(/\/$/, ''))
-    .filter(Boolean)
-}
-
-/** Icons must ship as inline SVG bodies in the client bundle, not be fetched at runtime. */
-function hasBundledIconBodies(publicDir) {
-  if (!fs.existsSync(publicDir)) return false
-  return fs
-    .readdirSync(publicDir)
-    .filter(name => name.endsWith('.js'))
-    .some(name => fs.readFileSync(path.join(publicDir, name), 'utf8').includes('<path '))
+/** Synchronous stderr: survives a `process.exit` right after it, unlike console.error on a pipe. */
+function warn(message) {
+  fs.writeSync(2, `pack-verify: ${message}\n`)
 }
 
 /** Kill the npx process group and remove both artefacts. Idempotent: `finally` and a signal may both call it. */
@@ -54,12 +50,12 @@ function cleanup() {
   try {
     fs.rmSync(work, { recursive: true, force: true, maxRetries: 3 })
   } catch (err) {
-    console.error(`pack-verify: could not remove ${work}: ${err.message}`)
+    warn(`could not remove ${work}: ${err.message}`)
   }
   try {
     fs.rmSync(tarball, { force: true, maxRetries: 3 })
   } catch (err) {
-    console.error(`pack-verify: could not remove ${tarball}: ${err.message}`)
+    warn(`could not remove ${tarball}: ${err.message}`)
   }
 }
 
@@ -75,28 +71,40 @@ process.once('SIGTERM', () => {
 })
 
 try {
-  if (!fs.existsSync(path.join(root, '.output', 'server', 'index.mjs'))) {
-    throw new Error('run `pnpm build` first; .output/server/index.mjs is missing')
-  }
+  const entry = path.join(root, '.output', 'server', 'index.mjs')
+  if (!fs.existsSync(entry)) throw new Error('run `pnpm build` first; .output/server/index.mjs is missing')
+  // A build older than the sources would prove nothing about what `npm publish` ships.
+  const built = newestMtime([path.join(root, '.output', 'nitro.json')])
+  const sources = newestMtime(['app', 'server', 'shared', 'nuxt.config.ts', 'package.json', 'pnpm-lock.yaml'].map(p => path.join(root, p)))
+  if (sources > built) throw new Error('.output is older than the sources; run `pnpm build` first')
+
   execFileSync('pnpm', ['pack'], { cwd: root, stdio: 'inherit' })
   if (!fs.existsSync(tarball)) throw new Error(`pnpm pack did not produce ${tarball}`)
   const copyName = path.basename(tarball)
   const copy = path.join(work, copyName)
   fs.copyFileSync(tarball, copy)
 
-  const entries = listTarball(copy)
-  for (const required of ['package/.output/server/index.mjs', 'package/bin/shelfware.mjs']) {
-    if (!entries.includes(required)) throw new Error(`the tarball is missing ${required}`)
-  }
-  const bundled = entries.filter(entry => entry.startsWith('package/node_modules'))
-  if (bundled.length > 0) {
-    throw new Error(`the tarball carries node_modules (${bundled.length} entries, e.g. ${bundled[0]})`)
+  // tar's own stderr stays visible so a corrupt archive or a missing tar explains itself.
+  const entries = parseTarListing(execFileSync('tar', ['-tzf', copy], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }))
+  const missing = missingEntries(entries, ['package/.output/server/index.mjs', 'package/bin/shelfware.mjs', 'package/LICENSE', 'package/README.md'])
+  if (missing.length > 0) throw new Error(`the tarball is missing ${missing.join(', ')}`)
+  const bundled = topLevelNodeModules(entries)
+  if (bundled.length > 0) throw new Error(`the tarball carries node_modules (${bundled.length} entries, e.g. ${bundled[0]})`)
+
+  // The gate packs with pnpm; the release publishes with npm. Their packlists must agree.
+  const npmDryRun = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'inherit'],
+  }))
+  const diff = packlistDiff(npmDryRun[0].files.map(file => file.path), entries)
+  if (diff.onlyInNpm.length > 0 || diff.onlyInTar.length > 0) {
+    throw new Error(`npm and pnpm packlists differ — only npm: ${diff.onlyInNpm.join(', ') || '-'}; only pnpm: ${diff.onlyInTar.join(', ') || '-'}`)
   }
 
   execFileSync('tar', ['-xzf', copy], { cwd: work, stdio: 'inherit' })
-  if (!hasBundledIconBodies(path.join(work, 'package', '.output', 'public', '_nuxt'))) {
-    throw new Error('no client chunk carries inline icon bodies; icons would be fetched from the network')
-  }
+  const iconProblem = checkBundledIconBodies(path.join(work, 'package', '.output', 'public', '_nuxt'))
+  if (iconProblem) throw new Error(`${iconProblem}; icons would be fetched from the network`)
 
   const port = await pickPort(3790)
   // npx (npm 11) reads an absolute path argument as the command to execute, but a
@@ -109,19 +117,24 @@ try {
     env: { ...process.env, npm_config_yes: 'true' },
   })
   // spawn reports failure asynchronously; an unhandled 'error' would escape the try
-  // block and skip cleanup, so race it against the wait and fail the run properly.
+  // block and skip cleanup. Abort the health poll so the run fails at once instead of
+  // idling until the 90 s deadline, and surface the failure through the normal catch.
+  const abort = new AbortController()
   const spawnFailed = new Promise((_, reject) => {
-    child.once('error', err => reject(new Error(`npx could not be spawned: ${err.message}`)))
+    child.once('error', (err) => {
+      abort.abort()
+      reject(new Error(`npx could not be spawned: ${err.message}`))
+    })
   })
   const healthy = await Promise.race([
-    waitForHealth(port, { timeoutMs: 90_000, intervalMs: 250 }),
+    waitForHealth(port, { timeoutMs: 90_000, intervalMs: 250, signal: abort.signal }),
     spawnFailed,
   ])
   if (!healthy) throw new Error(`no healthy answer on 127.0.0.1:${port} within 90 s`)
   console.log(`pack-verify: shelfware ${pkg.version} answered on 127.0.0.1:${port} from a clean npx install`)
   code = 0
 } catch (err) {
-  console.error(`pack-verify: ${err.message}`)
+  warn(err.message)
 } finally {
   cleanup()
 }

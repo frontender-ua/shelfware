@@ -125,6 +125,21 @@ describe('health', () => {
       get.mockRestore()
     }
   })
+
+  it('waitForHealth stops early when its signal aborts, without a dangling timer', async () => {
+    const probe = vi.fn<(port: number, host: string) => Promise<boolean>>().mockResolvedValue(false)
+    const controller = new AbortController()
+    const started = Date.now()
+    setTimeout(() => controller.abort(), 20)
+    expect(await waitForHealth(1, { probe, intervalMs: 5_000, timeoutMs: 60_000, signal: controller.signal })).toBe(false)
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(probe).toHaveBeenCalledTimes(1)
+    // An already-aborted signal never probes at all.
+    const done = new AbortController()
+    done.abort()
+    expect(await waitForHealth(1, { probe, intervalMs: 1, timeoutMs: 1_000, signal: done.signal })).toBe(false)
+    expect(probe).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('openBrowser', () => {

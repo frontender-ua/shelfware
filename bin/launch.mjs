@@ -96,13 +96,32 @@ export function probeHealth(port, host = HOST) {
   })
 }
 
-export async function waitForHealth(port, { timeoutMs = 10_000, intervalMs = 100, host = HOST, probe = probeHealth } = {}) {
+export async function waitForHealth(port, { timeoutMs = 10_000, intervalMs = 100, host = HOST, probe = probeHealth, signal } = {}) {
   const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
+  while (Date.now() < deadline && !signal?.aborted) {
     if (await probe(port, host)) return true
-    await new Promise(resolve => setTimeout(resolve, intervalMs))
+    await sleep(intervalMs, signal)
   }
   return false
+}
+
+/** Resolves after `ms`, or as soon as `signal` aborts — and then leaves no timer behind. */
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve()
+      return
+    }
+    const onAbort = () => {
+      clearTimeout(timer)
+      resolve()
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 export function openBrowser(url, { platform = process.platform, spawn = spawnProcess, env = process.env } = {}) {
