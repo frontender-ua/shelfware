@@ -16,25 +16,34 @@ export function useSkillDetail(id: Ref<string | undefined>) {
     error.value = ''
     if (!id.value) {
       detail.value = null
+      loading.value = false
       return
     }
+    // Fast j/k navigation overlaps requests: only the newest id may write the state.
+    const requested = id.value
     loading.value = true
     try {
-      detail.value = await api.skill(id.value)
+      const fresh = await api.skill(requested)
+      if (id.value === requested) detail.value = fresh
     } catch (err) {
-      detail.value = null
-      error.value = (err as Error).message
+      if (id.value === requested) {
+        detail.value = null
+        error.value = (err as Error).message
+      }
     } finally {
-      loading.value = false
+      if (id.value === requested) loading.value = false
     }
   }
 
   async function openFile(rel: string): Promise<void> {
     if (!id.value) return
+    const requested = id.value
     previewError.value = ''
     try {
-      preview.value = await api.file(id.value, rel)
+      const fresh = await api.file(requested, rel)
+      if (id.value === requested) preview.value = fresh
     } catch (err) {
+      if (id.value !== requested) return
       preview.value = null
       previewError.value = (err as Error).message
     }
