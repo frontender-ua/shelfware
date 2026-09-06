@@ -10,3 +10,4 @@ coverage
 *.tgz
 shelfware-handoff.md
 docs/superpowers
+.idea
