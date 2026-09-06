@@ -98,8 +98,17 @@ export async function waitForHealth(port, { timeoutMs = 10_000, intervalMs = 100
 export function openBrowser(url, { platform = process.platform, spawn = spawnProcess } = {}) {
   const cmd = platform === 'darwin' ? 'open' : platform === 'win32' ? 'cmd' : 'xdg-open'
   const args = platform === 'win32' ? ['/c', 'start', '', url] : [url]
-  const child = spawn(cmd, args, { stdio: 'ignore', detached: true })
-  child.unref?.()
+  // A missing browser opener (e.g. no xdg-open on a headless box) must never take
+  // the running server down with it: spawn can throw synchronously (rare) or emit
+  // an async 'error' (the common ENOENT case), and an unhandled 'error' on an
+  // EventEmitter is fatal. Swallow both.
+  try {
+    const child = spawn(cmd, args, { stdio: 'ignore', detached: true })
+    child.on?.('error', () => {})
+    child.unref?.()
+  } catch {
+    // ignore: failing to open a browser is not a launch failure
+  }
   return { cmd, args }
 }
 

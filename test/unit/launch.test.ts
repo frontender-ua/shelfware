@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import http from 'node:http'
 import net from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -111,6 +112,24 @@ describe('openBrowser', () => {
     expect(openBrowser('http://127.0.0.1:1', { platform: 'win32', spawn })).toEqual({ cmd: 'cmd', args: ['/c', 'start', '', 'http://127.0.0.1:1'] })
     expect(spawn).toHaveBeenCalledTimes(3)
     expect(spawn.mock.calls[0]![2]).toMatchObject({ stdio: 'ignore', detached: true })
+  })
+
+  it('never throws when the opener binary is missing and spawn emits an async error', () => {
+    const child = new EventEmitter()
+    const spawn = vi.fn(() => child)
+    const result = openBrowser('http://127.0.0.1:1', { platform: 'linux', spawn })
+    expect(result).toEqual({ cmd: 'xdg-open', args: ['http://127.0.0.1:1'] })
+    // Real child_process emits this asynchronously (ENOENT); emitting it here
+    // proves openBrowser attached an 'error' listener before returning, so this
+    // does not throw and nothing is left unhandled.
+    expect(() => child.emit('error', new Error('spawn xdg-open ENOENT'))).not.toThrow()
+  })
+
+  it('never throws when spawn itself throws synchronously', () => {
+    const spawn = vi.fn(() => {
+      throw new Error('spawn xdg-open ENOENT')
+    })
+    expect(() => openBrowser('http://127.0.0.1:1', { platform: 'linux', spawn })).not.toThrow()
   })
 })
 
