@@ -76,6 +76,19 @@ export function packlistDiff(npmPaths, tarEntries) {
   return { onlyInNpm: onlyInNpm.sort(), onlyInTar: onlyInTar.sort() }
 }
 
+/**
+ * File paths from `npm pack --dry-run --json`. npm 11 prints an array with one entry
+ * per package; npm 12 prints an object keyed by package name. Anything else is an
+ * npm we have not seen, so fail with the shape in the message rather than a TypeError.
+ */
+export function npmPackFiles(json, name) {
+  const entry = Array.isArray(json) ? json[0] : json?.[name] ?? Object.values(json ?? {})[0]
+  if (!Array.isArray(entry?.files)) {
+    throw new Error(`unexpected \`npm pack --json\` output: ${JSON.stringify(json).slice(0, 120)}`)
+  }
+  return entry.files.map(file => file.path)
+}
+
 /** Newest mtime in ms under the given files and directories (recursive). Missing paths count as 0. */
 export function newestMtime(paths) {
   let newest = 0

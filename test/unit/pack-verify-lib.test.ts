@@ -6,6 +6,7 @@ import {
   checkBundledIconBodies,
   missingEntries,
   newestMtime,
+  npmPackFiles,
   packlistDiff,
   parseTarListing,
   topLevelNodeModules,
@@ -97,6 +98,23 @@ describe('packlistDiff', () => {
       [`${metaDir}/***.json`, 'package.json'],
       [`package/${a}`, `package/${b}`, 'package/package.json'],
     )).toEqual({ onlyInNpm: [], onlyInTar: [`${metaDir}/***.json`] })
+  })
+})
+
+describe('npmPackFiles', () => {
+  const files = [{ path: 'package.json', size: 1, mode: 420 }, { path: 'bin/shelfware.mjs', size: 2, mode: 493 }]
+
+  it('reads the npm 11 array form and the npm 12 object form alike', () => {
+    expect(npmPackFiles([{ name: 'shelfware', files }], 'shelfware')).toEqual(['package.json', 'bin/shelfware.mjs'])
+    expect(npmPackFiles({ shelfware: { name: 'shelfware', files } }, 'shelfware')).toEqual(['package.json', 'bin/shelfware.mjs'])
+    // An object keyed by something other than the expected name still resolves to its single entry.
+    expect(npmPackFiles({ '@scope/other': { files } }, 'shelfware')).toEqual(['package.json', 'bin/shelfware.mjs'])
+  })
+
+  it('names the shape instead of throwing a TypeError on unknown output', () => {
+    expect(() => npmPackFiles([], 'shelfware')).toThrow('unexpected `npm pack --json` output: []')
+    expect(() => npmPackFiles({ shelfware: { name: 'shelfware' } }, 'shelfware')).toThrow('unexpected `npm pack --json` output')
+    expect(() => npmPackFiles(null, 'shelfware')).toThrow('unexpected `npm pack --json` output: null')
   })
 })
 

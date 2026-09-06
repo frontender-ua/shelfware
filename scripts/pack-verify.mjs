@@ -11,6 +11,7 @@ import {
   checkBundledIconBodies,
   missingEntries,
   newestMtime,
+  npmPackFiles,
   packlistDiff,
   parseTarListing,
   topLevelNodeModules,
@@ -111,7 +112,7 @@ try {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
   }))
-  const diff = packlistDiff(npmDryRun[0].files.map(file => file.path), entries)
+  const diff = packlistDiff(npmPackFiles(npmDryRun, pkg.name), entries)
   if (diff.onlyInNpm.length > 0 || diff.onlyInTar.length > 0) {
     throw new Error(`npm and pnpm packlists differ — only npm: ${diff.onlyInNpm.join(', ') || '-'}; only pnpm: ${diff.onlyInTar.join(', ') || '-'}`)
   }
