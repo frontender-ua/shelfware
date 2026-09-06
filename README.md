@@ -4,6 +4,11 @@ shelfware finds the shelfware in your skill drawers.
 
 A local catalog of the AI-agent skills installed on this machine: every `~/.<tool>/skills` drawer (`~/.claude/skills`, `~/.cursor/skills`, `~/.codex/skills`, `~/.agents/skills`, a custom `~/.claude-work/skills`, …), Cursor plugins, Gemini Antigravity, Hermes profiles, and friends. It scans, lists, searches, renders, **edits**, audits, quarantines, restores, and permanently deletes skills, from a browser tab that only your machine can reach.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot_dark.png">
+  <img src="docs/screenshot_light.png" alt="shelfware: drawers on the left, the card list in the middle, the selected skill rendered on the right" width="1440">
+</picture>
+
 ## Run it
 
 ```bash
