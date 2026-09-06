@@ -3,7 +3,9 @@ import { FORM_OPTIONS, INVOCATION_OPTIONS, RISK_OPTIONS } from '~/utils/search'
 
 const catalog = useCatalog()
 const { query, filters, visible, inQuarantine, markedOnShelf, loading, error, selectedId } = catalog
-const { openSlip } = useSlip()
+const slipState = useSlip()
+const readerTab = useReaderTab()
+const { openSlip } = slipState
 
 const searchRef = ref<{ inputRef: HTMLInputElement | null } | null>(null)
 
@@ -33,6 +35,23 @@ function focusSearch(): void {
 }
 
 defineExpose({ focusSearch })
+
+useShelfKeys({
+  visibleIds: catalog.visibleIds,
+  selectedId: catalog.selectedId,
+  inQuarantine: catalog.inQuarantine,
+  slipOpen: slipState.open,
+  select: (id) => {
+    catalog.select(id)
+  },
+  toggleMark: id => catalog.toggleMark(id),
+  openSlip: mode => slipState.openSlip(mode, targetIds.value),
+  closeSlip: slipState.closeSlip,
+  focusSearch,
+  openEditor: () => {
+    readerTab.value = 'edit'
+  },
+})
 </script>
 
 <template>
