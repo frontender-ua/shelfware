@@ -77,6 +77,19 @@ export function packlistDiff(npmPaths, tarEntries) {
 }
 
 /**
+ * Parse the stdout of `npm pack --dry-run --json`. Some npm versions (10.x) run the
+ * `prepare` script even with `--ignore-scripts`, and its chatter (`[info] …`, `> …`)
+ * lands on stdout ahead of the JSON. The JSON itself is pretty-printed, so it starts
+ * at the first line that is exactly `[` or `{` (or a compact `[{…` / `{"…` line).
+ */
+export function parseNpmPackJson(stdout) {
+  const lines = stdout.split('\n')
+  const start = lines.findIndex(line => /^(\[|\{)\s*$/.test(line) || /^(\[\{|\{")/.test(line))
+  if (start === -1) throw new Error(`no JSON in \`npm pack --json\` output: ${stdout.slice(0, 120)}`)
+  return JSON.parse(lines.slice(start).join('\n'))
+}
+
+/**
  * File paths from `npm pack --dry-run --json`. npm 11 prints an array with one entry
  * per package; npm 12 prints an object keyed by package name. Anything else is an
  * npm we have not seen, so fail with the shape in the message rather than a TypeError.

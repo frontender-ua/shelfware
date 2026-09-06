@@ -8,6 +8,7 @@ import {
   newestMtime,
   npmPackFiles,
   packlistDiff,
+  parseNpmPackJson,
   parseTarListing,
   topLevelNodeModules,
 } from '../../scripts/pack-verify-lib.mjs'
@@ -98,6 +99,39 @@ describe('packlistDiff', () => {
       [`${metaDir}/***.json`, 'package.json'],
       [`package/${a}`, `package/${b}`, 'package/package.json'],
     )).toEqual({ onlyInNpm: [], onlyInTar: [`${metaDir}/***.json`] })
+  })
+})
+
+describe('parseNpmPackJson', () => {
+  it('skips prepare-script chatter that npm 10 prints ahead of the JSON', () => {
+    const noisy = [
+      '',
+      '> shelfware@0.1.1 prepare',
+      '> nuxt prepare',
+      '',
+      '[info] Nuxt Icon server bundle mode is set to `local`',
+      '│',
+      '◆  Types generated in .nuxt.',
+      '[',
+      '  {',
+      '    "name": "shelfware",',
+      '    "files": [{ "path": "package.json", "size": 1, "mode": 420 }]',
+      '  }',
+      ']',
+      '',
+    ].join('\n')
+    expect(parseNpmPackJson(noisy)).toEqual([{ name: 'shelfware', files: [{ path: 'package.json', size: 1, mode: 420 }] }])
+  })
+
+  it('accepts clean pretty-printed and compact output in both shapes', () => {
+    expect(parseNpmPackJson('[\n  { "files": [] }\n]\n')).toEqual([{ files: [] }])
+    expect(parseNpmPackJson('{\n  "shelfware": { "files": [] }\n}\n')).toEqual({ shelfware: { files: [] } })
+    expect(parseNpmPackJson('[{"files":[]}]')).toEqual([{ files: [] }])
+    expect(parseNpmPackJson('{"shelfware":{"files":[]}}')).toEqual({ shelfware: { files: [] } })
+  })
+
+  it('names the problem when there is no JSON at all', () => {
+    expect(() => parseNpmPackJson('[info] Nuxt only chatter\n')).toThrow('no JSON in `npm pack --json` output')
   })
 })
 

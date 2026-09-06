@@ -13,6 +13,7 @@ import {
   newestMtime,
   npmPackFiles,
   packlistDiff,
+  parseNpmPackJson,
   parseTarListing,
   topLevelNodeModules,
 } from './pack-verify-lib.mjs'
@@ -107,7 +108,7 @@ try {
   if (bundled.length > 0) throw new Error(`the tarball carries node_modules (${bundled.length} entries, e.g. ${bundled[0]})`)
 
   // The gate packs with pnpm; the release publishes with npm. Their packlists must agree.
-  const npmDryRun = JSON.parse(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+  const npmDryRun = parseNpmPackJson(execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
     cwd: root,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
