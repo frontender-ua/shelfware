@@ -10,11 +10,11 @@ import { pickPort, waitForHealth } from '../bin/launch.mjs'
 import {
   checkBundledIconBodies,
   missingEntries,
-  newestMtime,
   npmPackFiles,
   packlistDiff,
   parseNpmPackJson,
   parseTarListing,
+  staleBuildReason,
   topLevelNodeModules,
 } from './pack-verify-lib.mjs'
 
@@ -90,9 +90,8 @@ try {
   const entry = path.join(root, '.output', 'server', 'index.mjs')
   if (!fs.existsSync(entry)) throw new Error('run `pnpm build` first; .output/server/index.mjs is missing')
   // A build older than the sources would prove nothing about what `npm publish` ships.
-  const built = newestMtime([path.join(root, '.output', 'nitro.json')])
-  const sources = newestMtime(['app', 'server', 'shared', 'nuxt.config.ts', 'package.json', 'pnpm-lock.yaml'].map(p => path.join(root, p)))
-  if (sources > built) throw new Error('.output is older than the sources; run `pnpm build` first')
+  const stale = staleBuildReason(root)
+  if (stale) throw new Error(stale)
 
   execFileSync('pnpm', ['pack'], { cwd: root, stdio: 'inherit' })
   if (!fs.existsSync(tarball)) throw new Error(`pnpm pack did not produce ${tarball}`)

@@ -120,3 +120,22 @@ export function newestMtime(paths) {
   for (const p of paths) visit(p)
   return newest
 }
+
+export const BUILD_SOURCES = ['app', 'server', 'shared', 'nuxt.config.ts', '.nuxtrc', 'package.json', 'pnpm-lock.yaml']
+
+/**
+ * Whether `.output` can vouch for the sources: null when the Nitro build stamp exists and
+ * is at least as new as every watched source, otherwise one line telling the user what
+ * to do. `nitro.json` is written last by `nuxt build`, so its mtime is the build time.
+ */
+export function staleBuildReason(root, sources = BUILD_SOURCES) {
+  const stamp = path.join(root, '.output', 'nitro.json')
+  if (!fs.existsSync(stamp)) return '.output/nitro.json is missing; run `pnpm build` first'
+  const built = newestMtime([stamp])
+  let newest = null
+  for (const source of sources) {
+    const mtime = newestMtime([path.join(root, source)])
+    if (mtime > built && (newest === null || mtime > newest.mtime)) newest = { source, mtime }
+  }
+  return newest ? `.output is older than ${newest.source}; run \`pnpm build\` first` : null
+}

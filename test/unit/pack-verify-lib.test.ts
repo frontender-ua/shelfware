@@ -10,6 +10,7 @@ import {
   packlistDiff,
   parseNpmPackJson,
   parseTarListing,
+  staleBuildReason,
   topLevelNodeModules,
 } from '../../scripts/pack-verify-lib.mjs'
 
@@ -166,5 +167,40 @@ describe('newestMtime', () => {
     expect(newestMtime([path.join(dir, 'missing')])).toBe(0)
     expect(newestMtime([path.join(dir, 'src')])).toBeLessThan(Date.now() - 50_000)
     expect(newestMtime([path.join(dir, 'src'), path.join(dir, 'b.ts')])).toBeGreaterThan(Date.now() - 5_000)
+  })
+})
+
+describe('staleBuildReason', () => {
+  function stamp(root: string, ageMs: number): void {
+    fs.mkdirSync(path.join(root, '.output'), { recursive: true })
+    fs.writeFileSync(path.join(root, '.output', 'nitro.json'), '{}')
+    const when = new Date(Date.now() - ageMs)
+    fs.utimesSync(path.join(root, '.output', 'nitro.json'), when, when)
+  }
+
+  it('names the missing stamp, the newer source, or nothing', () => {
+    const root = tmp()
+    fs.mkdirSync(path.join(root, 'app'))
+    fs.writeFileSync(path.join(root, 'app', 'a.vue'), 'a')
+    fs.writeFileSync(path.join(root, '.nuxtrc'), 'x')
+    const old = new Date(Date.now() - 120_000)
+    for (const p of ['app/a.vue', 'app', '.nuxtrc']) fs.utimesSync(path.join(root, p), old, old)
+
+    expect(staleBuildReason(root)).toBe('.output/nitro.json is missing; run `pnpm build` first')
+
+    stamp(root, 60_000)
+    expect(staleBuildReason(root)).toBeNull()
+
+    fs.writeFileSync(path.join(root, '.nuxtrc'), 'y')
+    expect(staleBuildReason(root)).toBe('.output is older than .nuxtrc; run `pnpm build` first')
+
+    // A plain write's real mtime can carry a couple ms of kernel-assigned latency past
+    // `Date.now()` (observed on APFS); let that settle before stamping "now" below, or
+    // the two timestamps race at sub-millisecond resolution and the next assertion flakes.
+    const settleUntil = Date.now() + 3
+    while (Date.now() < settleUntil);
+
+    stamp(root, 0)
+    expect(staleBuildReason(root)).toBeNull()
   })
 })
