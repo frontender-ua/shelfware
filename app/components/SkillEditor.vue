@@ -83,11 +83,16 @@ function revert(): void {
   conflict.value = null
 }
 
+/**
+ * Spec §11.8: meta_s saves from the Edit tab only. The editor stays mounted behind the
+ * other reader tabs, so swallow the browser's Save dialog first, then bow out.
+ */
 defineShortcuts({
   meta_s: {
     usingInput: true,
     handler: (e?: KeyboardEvent) => {
       e?.preventDefault()
+      if (useReaderTab().value !== 'edit') return
       doSave()
     },
   },

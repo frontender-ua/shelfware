@@ -19,6 +19,7 @@ const emit = defineEmits<{
         <button
           type="button"
           :class="['flex w-full justify-between gap-2 rounded px-1 py-0.5 text-start hover:bg-muted', preview?.path === file.path ? 'bg-elevated' : '']"
+          :aria-current="preview?.path === file.path ? 'true' : undefined"
           @click="emit('open', file.path)"
         >
           <span class="break-all font-mono">{{ file.path }}</span>

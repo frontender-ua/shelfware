@@ -25,8 +25,8 @@
     "pack:verify": "node scripts/pack-verify.mjs",
     "prepublishOnly": "pnpm build && pnpm test"
   },
-  "dependencies": {},
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.129",
     "@nuxt/test-utils": "^4.2.0",
     "@nuxt/ui": "^4.11.0",
     "@types/markdown-it": "^14.2.0",

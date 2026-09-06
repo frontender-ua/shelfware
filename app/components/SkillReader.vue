@@ -29,7 +29,7 @@ const RISK_CLASS: Record<SkillDetail['risk'], string> = {
 /** Spec §11.5: broken cards never reach the renderer. */
 const rendered = computed(() => {
   if (!detail.value || detail.value.physicality === 'broken') return ''
-  return renderMarkdown(detail.value.body || '*This skill has no body after the frontmatter.*')
+  return renderMarkdown(detail.value.body.trim() || '*This skill has no body after the frontmatter.*')
 })
 
 async function onSaved(): Promise<void> {

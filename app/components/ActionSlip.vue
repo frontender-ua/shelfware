@@ -12,13 +12,18 @@ const router = useRouter()
 const mode = computed<ShelfAction>(() => slip.value?.mode ?? 'quarantine')
 const quarantineRoot = computed(() => catalog.value?.quarantineRoot ?? '~/.skill-cabinet/quarantine')
 
-/** Only the cards this action may touch (upstream shelf-actions rule). */
+/**
+ * Only the cards this action may touch (upstream shelf-actions rule), narrowed for
+ * v0.1: Delete never sends `force`, so a live card would only earn a server refusal.
+ */
 const cards = computed(() => {
   if (!slip.value) return []
   const byId = new Map(skills.value.map(s => [s.id, s]))
-  return idsForShelfAction(slip.value.ids, skills.value, slip.value.mode)
+  const action = slip.value.mode
+  return idsForShelfAction(slip.value.ids, skills.value, action)
     .map(id => byId.get(id))
     .filter((card): card is NonNullable<typeof card> => Boolean(card))
+    .filter(card => action !== 'delete' || card.quarantined)
 })
 
 const unlinkCount = computed(() => (mode.value === 'delete' ? cards.value.filter(c => c.link).length : 0))

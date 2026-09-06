@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import type { SkillDetail } from '#shared/types/catalog'
 import SkillEditor from '~/components/SkillEditor.vue'
+import { useReaderTab } from '~/composables/useReaderTab'
 import { ApiError } from '~/utils/api-error'
 
 function detailWith(over: Partial<SkillDetail> = {}): SkillDetail {
@@ -17,6 +18,12 @@ function detailWith(over: Partial<SkillDetail> = {}): SkillDetail {
   }
 }
 
+/** `defineShortcuts` maps `meta` to `ctrl` off macOS, so the event has to match the platform. */
+const MAC = /Macintosh;/.test(navigator.userAgent)
+function pressSave(target: EventTarget): void {
+  target.dispatchEvent(new KeyboardEvent('keydown', { key: 's', metaKey: MAC, ctrlKey: !MAC, bubbles: true, cancelable: true }))
+}
+
 function buttonNamed(wrapper: { findAll: (s: string) => { text(): string, trigger(e: string): Promise<void> }[] }, label: string) {
   const button = wrapper.findAll('button').find(b => b.text().trim() === label)
   if (!button) throw new Error(`no button "${label}"`)
@@ -24,6 +31,29 @@ function buttonNamed(wrapper: { findAll: (s: string) => { text(): string, trigge
 }
 
 describe('SkillEditor', () => {
+  it('meta_s saves from the Edit tab only', async () => {
+    const detail = detailWith()
+    const save = vi.fn(async (source: string) => detailWith({ source, contentHash: 'hash2' }))
+    const wrapper = await mountSuspended(SkillEditor, { props: { detail, save, reload: vi.fn() }, attachTo: document.body })
+    const textarea = wrapper.find('textarea').element
+
+    await wrapper.find('textarea').setValue('new text')
+    const tab = useReaderTab()
+
+    tab.value = 'source'
+    pressSave(textarea)
+    await flushPromises()
+    expect(save).not.toHaveBeenCalled()
+
+    tab.value = 'edit'
+    pressSave(textarea)
+    await flushPromises()
+    expect(save).toHaveBeenCalledWith('new text', 'hash1')
+
+    tab.value = 'manuscript'
+    wrapper.unmount()
+  })
+
   it('typing sets dirty and Save calls save with the baseline hash', async () => {
     const detail = detailWith()
     const save = vi.fn(async (source: string) => detailWith({ source, contentHash: 'hash2' }))

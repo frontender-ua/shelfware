@@ -63,6 +63,7 @@ useShelfKeys({
           v-model="query"
           name="search"
           placeholder="Find a card"
+          aria-label="Find a card"
           icon="i-lucide-search"
           class="w-full"
         >
