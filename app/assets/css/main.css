@@ -4,7 +4,8 @@
 /*
  * IBM Carbon Gray palette (v11) on Tailwind's stops: 50 = Gray 10 … 900 = Gray 100.
  * The app uses only Nuxt UI's semantic tokens, so switching `neutral` to this scale
- * restyles both colour modes: light = Carbon "Gray 10", dark = Carbon "Gray 100".
+ * restyles both colour modes: light = white ground with Carbon greys for surfaces,
+ * dark = Carbon "Gray 100".
  */
 @theme static {
   --color-carbon-50: #f4f4f4;
@@ -18,6 +19,19 @@
   --color-carbon-800: #262626;
   --color-carbon-900: #161616;
   --color-carbon-950: #0b0b0b;
+}
+
+/*
+ * Light mode keeps Nuxt UI's white ground; Carbon greys only fill the layers
+ * (muted #f4f4f4, elevated #e0e0e0). The secondary text stops move one step
+ * darker than Nuxt UI's defaults so `text-muted` on an elevated surface (the
+ * selected card) clears WCAG AA: muted 5.92:1, dimmed 5.02:1 on white and 4.57:1
+ * on muted. `text-dimmed` on an elevated surface (3.81:1) is the one residual —
+ * fixing it means changing the selected card's surface, not a token.
+ */
+:root {
+  --ui-text-muted: var(--ui-color-neutral-600);
+  --ui-text-dimmed: var(--ui-color-neutral-500);
 }
 
 /* Dark mode: Carbon's layering. Background Gray 100, first layer Gray 90, borders Gray 80. */
