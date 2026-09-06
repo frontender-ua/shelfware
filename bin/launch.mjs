@@ -17,6 +17,7 @@ Usage: shelfware [--port <n>] [--no-open]
 
   --port <n>   bind 127.0.0.1:<n> instead of the first free port from ${DEFAULT_PORT}
   --no-open    do not open the browser (also SHELFWARE_NO_OPEN=1)
+  --help, -h   print this help and exit
   PORT=<n>     same as --port
 `
 

@@ -26,8 +26,7 @@ cat > bin/shelfware.mjs <<'EOF'
 console.log('shelfware: coming soon. Watch https://www.npmjs.com/package/shelfware')
 EOF
 chmod +x bin/shelfware.mjs
-cp /path/to/shelfware/LICENSE .
-npm publish --access public
+cp /path/to/shelfware/LICENSE . && npm publish --access public
 ```
 
 ## Real release
@@ -39,4 +38,4 @@ pnpm build && pnpm test && pnpm pack:verify
 npm publish --access public
 ```
 
-`prepublishOnly` reruns build and tests; `files` ships `bin/` and `.output/` only.
+`prepublishOnly` reruns build and tests; `files` ships `bin/` and `.output/`, and npm always adds `package.json`, `README.md` and `LICENSE` on top of it.
