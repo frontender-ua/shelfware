@@ -60,11 +60,13 @@ describe('useCatalog', () => {
     await nextTick()
     expect(c.visible.value.map(s => s.slug)).toEqual(['broken'])
     expect(c.scopeCounts.value.get('claude')).toBe(1)
+    expect(c.heldCount.value).toBe(0)
     expect(JSON.parse(localStorage.getItem('shelfware-filters') ?? '{}').form).toBe('broken')
 
     c.filters.value = { ...DEFAULT_FILTERS }
     c.query.value = '  ALPHA '
     await nextTick()
+    expect(c.heldCount.value).toBe(1)
     expect(c.visible.value.map(s => s.slug)).toEqual(['alpha'])
   })
 

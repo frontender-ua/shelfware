@@ -28,7 +28,7 @@ export function useCatalog() {
   const skills = computed<SkillCard[]>(() => catalog.value?.skills ?? [])
   const live = computed(() => skills.value.filter(s => !s.quarantined))
   const held = computed(() => skills.value.filter(s => s.quarantined))
-  const heldCount = computed(() => held.value.length)
+  const heldCount = computed(() => held.value.filter(s => matchesFilters(s, filters.value)).length)
   const scopes = computed<ScopeSummary[]>(() => catalog.value?.scopes ?? [])
   const selected = computed(() => skills.value.find(s => s.id === selectedId.value) ?? null)
 
@@ -43,7 +43,7 @@ export function useCatalog() {
   })
   const visibleIds = computed(() => visible.value.map(s => s.id))
 
-  /** Drawer counts follow the tray filters (DESIGN.md); the census does not. */
+  /** Drawer counts and the quarantine badge follow the tray filters (DESIGN.md); the census does not. */
   const scopeCounts = computed(() => {
     const by = new Map<string, number>()
     for (const s of filteredLive.value) by.set(s.scopeId, (by.get(s.scopeId) ?? 0) + 1)
