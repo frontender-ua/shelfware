@@ -26,12 +26,15 @@ export function makeToken() {
   return `sw_${crypto.randomBytes(32).toString('hex')}`
 }
 
-/** The raw text stays in the message so `--port abc` reads back as "abc", not NaN. */
+/**
+ * The raw text stays in the message so `--port abc` reads back as "abc", not NaN.
+ * Digits only: `Number()` would otherwise accept `0x10`, `1e3` and `' 4000 '`,
+ * none of which the help text (`--port <n>`) promises.
+ */
 function parsePort(raw) {
+  if (!/^\d+$/.test(raw)) throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
   const port = Number(raw)
-  if (raw === '' || !Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
-  }
+  if (port < 1 || port > 65535) throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
   return port
 }
 
@@ -184,12 +187,23 @@ export async function launch({
     exit(1)
     return null
   }
-  const port = args.port ?? await pickPort(DEFAULT_PORT)
-  env.NUXT_PUBLIC_SHELFWARE_TOKEN = makeToken()
-  env.NITRO_HOST = HOST
-  env.NITRO_PORT = String(port)
-  env.NODE_ENV = 'production'
-  await importServer()
+  // Both of these can fail for reasons the user can act on — every port in the
+  // range is taken, or the server throws at import (a Nitro crash, or an
+  // EADDRINUSE from losing the race for the auto-picked port). One line, exit 1,
+  // never a stack trace.
+  let port
+  try {
+    port = args.port ?? await pickPort(DEFAULT_PORT)
+    env.NUXT_PUBLIC_SHELFWARE_TOKEN = makeToken()
+    env.NITRO_HOST = HOST
+    env.NITRO_PORT = String(port)
+    env.NODE_ENV = 'production'
+    await importServer()
+  } catch (err) {
+    log(`shelfware: ${err.message}`)
+    exit(1)
+    return null
+  }
   if (!(await waitForHealth(port))) {
     log(`shelfware: the server did not answer on http://${HOST}:${port} within 10 s`)
     exit(1)

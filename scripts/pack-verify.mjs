@@ -24,9 +24,17 @@ let child = null
 let code = 1
 let cleaned = false
 
-/** Synchronous stderr: survives a `process.exit` right after it, unlike console.error on a pipe. */
+/**
+ * Synchronous stderr: survives a `process.exit` right after it, unlike console.error on a pipe.
+ * It is also called from `cleanup()`, where a throw (EPIPE/EBADF on a closed stderr) would skip
+ * the rest of the teardown — so a failure to report is swallowed rather than propagated.
+ */
 function warn(message) {
-  fs.writeSync(2, `pack-verify: ${message}\n`)
+  try {
+    fs.writeSync(2, `pack-verify: ${message}\n`)
+  } catch {
+    // stderr is gone; nothing left to tell
+  }
 }
 
 /** Kill the npx process group and remove both artefacts. Idempotent: `finally` and a signal may both call it. */
@@ -43,7 +51,8 @@ function cleanup() {
         // the child is already gone
       }
     }
-    // Release the handle instead of exiting hard, so piped stdout is flushed in full.
+    // stdio is inherited, so there are no pipes to drain; the detached child handle
+    // would keep this process's event loop alive after cleanup, so release it.
     child.unref()
   }
   // Each removal gets its own try/catch: a throw on the temp dir must not skip the tarball.
@@ -60,7 +69,8 @@ function cleanup() {
 }
 
 // A terminal SIGINT reaches only this script (the child sits in its own process group),
-// so without these the server, the temp dir and the .tgz would all survive a Ctrl-C.
+// so without these the server, the temp dir and the .tgz would all survive a Ctrl-C, a
+// `kill`, or a closed terminal (SIGHUP).
 process.once('SIGINT', () => {
   cleanup()
   process.exit(130)
@@ -68,6 +78,10 @@ process.once('SIGINT', () => {
 process.once('SIGTERM', () => {
   cleanup()
   process.exit(143)
+})
+process.once('SIGHUP', () => {
+  cleanup()
+  process.exit(129)
 })
 
 try {

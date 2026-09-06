@@ -24,7 +24,7 @@ Skills outside your home directory (project-level `.claude/skills` inside a repo
 
 - **`npx shelfware` prints "coming soon".** Your npx cache still holds the `0.0.1` placeholder. Run `npx shelfware@latest` once; npx then caches the real release.
 - **The browser did not open.** Copy the URL from the `shelfware at http://127.0.0.1:<port>` line, or start with `--no-open` and open it yourself.
-- **Port in use.** An explicit `--port <n>` that is taken is refused at once with a one-line message; without the flag shelfware tries 3781 through 3800. A typo in a flag prints the message and the help text instead of a stack trace.
+- **Port in use.** An explicit `--port <n>` that is taken is refused at once with a one-line message; without either the flag or PORT shelfware tries 3781 through 3800. A typo in a flag prints the message and the help text instead of a stack trace.
 - **The catalog is empty.** Check that your skills live under `$HOME/.<tool>/skills`; other locations are not scanned yet.
 
 ## What you get

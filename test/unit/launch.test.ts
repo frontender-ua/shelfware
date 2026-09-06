@@ -67,6 +67,12 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--port', 'abc'], {})).toThrow('Invalid port: "abc"')
     expect(() => parseArgs([], { PORT: '70000' })).toThrow('Invalid port: "70000"')
     expect(() => parseArgs(['--port=0'], {})).toThrow('Invalid port: "0"')
+    // Digits only: `Number()` used to accept every one of these.
+    expect(() => parseArgs(['--port', '0x10'], {})).toThrow('Invalid port: "0x10"')
+    expect(() => parseArgs(['--port=1e3'], {})).toThrow('Invalid port: "1e3"')
+    expect(() => parseArgs(['--port', ' 4000 '], {})).toThrow('Invalid port: " 4000 "')
+    expect(() => parseArgs(['--port', '-1'], {})).toThrow('Invalid port: "-1"')
+    expect(() => parseArgs(['--port', '3.5'], {})).toThrow('Invalid port: "3.5"')
     expect(() => parseArgs(['--port'], {})).toThrow('--port needs a value')
     expect(() => parseArgs(['--prot', '4000'], {})).toThrow('Unknown option: --prot')
   })
@@ -251,6 +257,19 @@ describe('launch', () => {
     expect(exit).toHaveBeenCalledWith(1)
     expect(importServer).not.toHaveBeenCalled()
     expect(env.NUXT_PUBLIC_SHELFWARE_TOKEN).toBeUndefined()
+  })
+
+  it('reports a server that throws at import with one line, never a stack trace', async () => {
+    const log = vi.fn()
+    const exit = vi.fn()
+    const importServer = vi.fn(async () => {
+      throw new Error('boom at import')
+    })
+    const result = await launch({ argv: ['--port', String(await pickPort(4200))], env: {}, importServer, log, exit, entry: ENTRY })
+    expect(result).toBeNull()
+    expect(log).toHaveBeenCalledWith('shelfware: boom at import')
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('shelfware at http://'))
   })
 
   it('serverEntry points at .output/server/index.mjs beside bin/', () => {
