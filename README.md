@@ -42,6 +42,16 @@ Skills outside your home directory (project-level `.claude/skills` inside a repo
 - No CORS headers, ever. File reads and saves are contained to the skill's directory; symlinks are never followed for destructive actions.
 - Nothing leaves the machine. There is no network feature.
 
+## Security scanners
+
+Supply-chain scanners such as Socket.dev raise a few alerts on this package. None of them is shelfware's own code; all come from the prebuilt Nuxt server that ships in `.output/`:
+
+- **"Obfuscated code"** in `entities/…/decode-data-html.js`: the HTML entity table of the `entities` library, stored as Base64 and decoded into a `Uint16Array` at load time. Byte-identical to the published `entities` package.
+- **"Dynamic code execution"** in `source-map-js` and the Vue compiler: `new Function` used by a sort routine and by Vue's template compiler. shelfware never compiles templates at runtime (`ssr: false`, no runtime compiler).
+- **"URL strings"**: the Iconify API hosts baked into `@nuxt/icon` (the provider is disabled and every icon is bundled), XML namespaces, documentation links in framework error messages, and file names such as `SKILL.md` that merely contain a dot.
+
+The launcher itself uses only Node built-ins, binds `127.0.0.1`, spawns nothing but your browser opener, and has no install scripts. `pnpm pack:verify` rebuilds, packs and runs the exact tarball through `npx` before every release, and releases are published from GitHub Actions with npm provenance.
+
 ## Credits
 
 Scanner rules, audit heuristics and the quarantine format are ported from [skill-cabinet](https://github.com/subsy/skill-cabinet) (MIT), whose audit rules were adapted from [Adaptive Skills](https://github.com/wangsoft/Adaptive-Skills) (MIT). shelfware is a rebuild in Nuxt 4 with an editor and a hardened local security model.
