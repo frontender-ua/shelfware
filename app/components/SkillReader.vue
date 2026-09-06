@@ -139,7 +139,8 @@ async function onSaved(): Promise<void> {
       </template>
 
       <template #edit>
-        <p class="text-sm text-muted">The editor arrives in Task 9.</p>
+        <p v-if="detail.physicality === 'broken'" class="text-sm text-muted">Nothing to edit: the link target is gone.</p>
+        <SkillEditor v-else :detail="detail" :save="save" :reload="reload" @saved="onSaved" />
       </template>
 
       <template #folio>
