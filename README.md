@@ -2,17 +2,30 @@
 
 shelfware finds the shelfware in your skill drawers.
 
-A local catalog of the AI-agent skills installed on this machine: `~/.claude/skills`, `~/.cursor/skills`, `~/.codex/skills`, `~/.agents/skills`, Cursor plugins, Gemini Antigravity, Hermes profiles, and friends. It scans, lists, searches, renders, **edits**, audits, quarantines, restores, and permanently deletes skills, from a browser tab that only your machine can reach.
+A local catalog of the AI-agent skills installed on this machine: every `~/.<tool>/skills` drawer (`~/.claude/skills`, `~/.cursor/skills`, `~/.codex/skills`, `~/.agents/skills`, a custom `~/.claude-work/skills`, …), Cursor plugins, Gemini Antigravity, Hermes profiles, and friends. It scans, lists, searches, renders, **edits**, audits, quarantines, restores, and permanently deletes skills, from a browser tab that only your machine can reach.
 
 ## Run it
 
 ```bash
-npx shelfware
+npx shelfware@latest
 ```
 
-Options: `--port <n>` (or `PORT`), `--no-open` (or `SHELFWARE_NO_OPEN=1`), `--help`. The server binds `127.0.0.1` on the first free port from 3781 and opens your browser.
+Options: `--port <n>` (or `PORT`), `--no-open` (or `SHELFWARE_NO_OPEN=1`), `--help`. The server binds `127.0.0.1` on the first free port from 3781 and opens your browser. Stop it with Ctrl-C.
 
-Node 20 or newer. No build step: the package ships the prebuilt app.
+Node 20 or newer. No build step: the package ships the prebuilt app. For a permanent install, `npm i -g shelfware` and then `shelfware`.
+
+### First run
+
+Starting shelfware only reads. It walks the hidden directories directly under your home (`$HOME`), skipping caches and toolchains, and picks up every `skills/` (or `skill/`) folder it finds, plus the Cursor, Gemini Antigravity and Hermes locations above. Nothing on disk changes until you quarantine, restore, delete or save a skill yourself.
+
+Skills outside your home directory (project-level `.claude/skills` inside a repository, an arbitrary path) are not scanned in v0.1; a `--root <path>` flag is planned. To scan a different home, run `HOME=/other/home npx shelfware@latest`.
+
+### Troubleshooting
+
+- **`npx shelfware` prints "coming soon".** Your npx cache still holds the `0.0.1` placeholder. Run `npx shelfware@latest` once; npx then caches the real release.
+- **The browser did not open.** Copy the URL from the `shelfware at http://127.0.0.1:<port>` line, or start with `--no-open` and open it yourself.
+- **Port in use.** Pass `--port <n>`; without it shelfware tries 3781 through 3800.
+- **The catalog is empty.** Check that your skills live under `$HOME/.<tool>/skills`; other locations are not scanned yet.
 
 ## What you get
 
