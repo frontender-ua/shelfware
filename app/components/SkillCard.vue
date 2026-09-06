@@ -45,7 +45,7 @@ const RISK_CLASS: Record<Card['risk'], string> = {
         :aria-label="`Mark ${card.name}`"
         @update:model-value="emit('toggle')"
       />
-      <button type="button" class="min-w-0 flex-1 text-start" @click="emit('select')">
+      <button type="button" class="min-w-0 flex-1 text-start" :aria-current="selected ? 'true' : undefined" @click="emit('select')">
         <div class="flex items-baseline gap-2">
           <span class="truncate font-medium text-highlighted">{{ card.name }}</span>
           <span class="truncate font-mono text-xs text-dimmed" :title="card.path">{{ card.scopeLabel }}</span>
