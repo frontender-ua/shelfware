@@ -1,0 +1,12 @@
+{
+  "extends": "./.nuxt/tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "allowJs": true,
+    "checkJs": false,
+    "types": ["node"]
+  },
+  "include": ["test/unit/**/*.ts", "test/helpers/**/*.ts"]
+}

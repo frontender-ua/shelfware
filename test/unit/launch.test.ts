@@ -19,9 +19,16 @@ import {
   TOKEN_ENV,
   waitForHealth,
 } from '../../bin/launch.mjs'
+import type { SpawnLike } from '../../bin/launch.mjs'
 
 /** An existing file to stand in for `.output/server/index.mjs` in launch tests. */
 const ENTRY = fileURLToPath(import.meta.url)
+
+type SpawnCall = Parameters<SpawnLike>
+/** A spawn stub whose recorded calls are typed, so `mock.calls[0][2].env` needs no cast. */
+function spawnStub(child: ReturnType<SpawnLike> = { unref: vi.fn() }) {
+  return vi.fn<SpawnLike>(() => child)
+}
 
 const servers: { close(): void }[] = []
 afterEach(() => {
@@ -172,7 +179,7 @@ describe('health', () => {
 
 describe('openBrowser', () => {
   it('picks the platform opener and detaches', () => {
-    const spawn = vi.fn(() => ({ unref: vi.fn() }))
+    const spawn = spawnStub()
     expect(openBrowser('http://127.0.0.1:1', { platform: 'darwin', spawn })).toEqual({ cmd: 'open', args: ['http://127.0.0.1:1'] })
     expect(openBrowser('http://127.0.0.1:1', { platform: 'linux', spawn })).toEqual({ cmd: 'xdg-open', args: ['http://127.0.0.1:1'] })
     expect(openBrowser('http://127.0.0.1:1', { platform: 'win32', spawn })).toEqual({ cmd: 'cmd', args: ['/c', 'start', '', 'http://127.0.0.1:1'] })
@@ -182,7 +189,7 @@ describe('openBrowser', () => {
 
   it('never throws when the opener binary is missing and spawn emits an async error', () => {
     const child = new EventEmitter()
-    const spawn = vi.fn(() => child)
+    const spawn = spawnStub(child)
     const result = openBrowser('http://127.0.0.1:1', { platform: 'linux', spawn })
     expect(result).toEqual({ cmd: 'xdg-open', args: ['http://127.0.0.1:1'] })
     // Real child_process emits this asynchronously (ENOENT); emitting it here
@@ -199,10 +206,10 @@ describe('openBrowser', () => {
   })
 
   it('hands the opener a copy of the environment without the session token', () => {
-    const spawn = vi.fn(() => ({ unref: vi.fn() }))
+    const spawn = spawnStub()
     const env = { PATH: '/usr/bin', NUXT_PUBLIC_SHELFWARE_TOKEN: 'sw_secret' }
     openBrowser('http://127.0.0.1:1', { platform: 'linux', spawn, env })
-    const options = spawn.mock.calls[0]![2] as { env: Record<string, string | undefined> }
+    const options: SpawnCall[2] = spawn.mock.calls[0]![2]
     expect(options.env).toEqual({ PATH: '/usr/bin' })
     // The caller's object is untouched: the server still needs the token.
     expect(env.NUXT_PUBLIC_SHELFWARE_TOKEN).toBe('sw_secret')
@@ -214,7 +221,7 @@ describe('launch', () => {
     const env: Record<string, string | undefined> = {}
     const log = vi.fn()
     const exit = vi.fn()
-    const spawn = vi.fn(() => ({ unref: vi.fn() }))
+    const spawn = spawnStub()
     let started: http.Server | null = null
     const importServer = vi.fn(async () => {
       const port = Number(env.NITRO_PORT)
@@ -238,7 +245,7 @@ describe('launch', () => {
     expect(importServer).toHaveBeenCalledTimes(1)
     expect(log).toHaveBeenCalledWith(`shelfware at http://127.0.0.1:${result!.port}`)
     expect(spawn).toHaveBeenCalledTimes(1)
-    const openerEnv = (spawn.mock.calls[0]![2] as { env: Record<string, string | undefined> }).env
+    const openerEnv = spawn.mock.calls[0]![2].env
     expect(openerEnv.NITRO_PORT).toBe(String(result!.port))
     expect(openerEnv).not.toHaveProperty('NUXT_PUBLIC_SHELFWARE_TOKEN')
     expect(exit).not.toHaveBeenCalled()
