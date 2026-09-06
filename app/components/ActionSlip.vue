@@ -33,7 +33,7 @@ function plural(n: number): string {
 
 interface SlipCopy {
   heading: (n: number) => string
-  note: (where: string) => string
+  note: (where: string) => Array<string | { path: string }>
   button: string
   busy: string
   done: (n: number) => string
@@ -44,7 +44,7 @@ interface SlipCopy {
 const COPY: Record<ShelfAction, SlipCopy> = {
   delete: {
     heading: n => `Delete ${plural(n)} from disk`,
-    note: () => 'There is no undo. Each card names its filesystem effect below.',
+    note: () => ['There is no undo. Each card names its filesystem effect below.'],
     button: 'Delete',
     busy: 'Deleting…',
     done: n => `Deleted ${plural(n)} from disk.`,
@@ -52,7 +52,7 @@ const COPY: Record<ShelfAction, SlipCopy> = {
   },
   quarantine: {
     heading: n => `Quarantine ${plural(n)} out of the drawers`,
-    note: where => `The cards move to ${where}. No agent reads that folder. Restore puts them back where they came from.`,
+    note: where => ['The cards move to ', { path: where }, '. No agent reads that folder. Restore puts them back where they came from.'],
     button: 'Quarantine',
     busy: 'Quarantining…',
     done: n => `Quarantined ${plural(n)}.`,
@@ -60,7 +60,7 @@ const COPY: Record<ShelfAction, SlipCopy> = {
   },
   restore: {
     heading: n => `Restore ${plural(n)} to their drawers`,
-    note: () => 'Each card goes back to the path it was filed from. A card whose path is already taken stays in the quarantine.',
+    note: () => ['Each card goes back to the path it was filed from. A card whose path is already taken stays in the quarantine.'],
     button: 'Restore',
     busy: 'Restoring…',
     done: n => `Restored ${plural(n)}.`,
@@ -117,7 +117,9 @@ async function confirm(): Promise<void> {
 <template>
   <UModal v-model:open="openModel" :title="slip ? copy.heading(cards.length) : ''" :dismissible="!busy">
     <template #body>
-      <p class="text-sm text-muted">{{ copy.note(quarantineRoot) }}</p>
+      <p class="text-sm text-muted">
+        <template v-for="(seg, i) in copy.note(quarantineRoot)" :key="i"><span v-if="typeof seg === 'string'">{{ seg }}</span><span v-else class="font-mono break-all">{{ seg.path }}</span></template>
+      </p>
       <p v-if="unlinkCount" class="mt-2 text-sm text-warning">Unlink removes the link only. The target stays.</p>
       <p v-if="managedCount" class="mt-2 text-sm text-warning">
         {{ managedCount }} of these live in a plugin cache or builtin drawer and may return the next time that tool updates.
