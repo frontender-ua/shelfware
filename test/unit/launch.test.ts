@@ -4,6 +4,8 @@ import net from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  checkPort,
+  describeError,
   HELP,
   isPortFree,
   launch,
@@ -11,8 +13,10 @@ import {
   openBrowser,
   parseArgs,
   pickPort,
+  portReason,
   probeHealth,
   serverEntry,
+  TOKEN_ENV,
   waitForHealth,
 } from '../../bin/launch.mjs'
 
@@ -63,18 +67,27 @@ describe('parseArgs', () => {
     expect(parseArgs(['--help'], {}).help).toBe(true)
   })
 
-  it('rejects a bad port, a missing --port value and an unknown option', () => {
+  it('rejects a bad port, a missing --port value, an unknown option and a stray argument', () => {
     expect(() => parseArgs(['--port', 'abc'], {})).toThrow('Invalid port: "abc"')
     expect(() => parseArgs([], { PORT: '70000' })).toThrow('Invalid port: "70000"')
     expect(() => parseArgs(['--port=0'], {})).toThrow('Invalid port: "0"')
-    // Digits only: `Number()` used to accept every one of these.
+    expect(() => parseArgs(['--port', '065535'], {})).toThrow('Invalid port: "065535"')
     expect(() => parseArgs(['--port', '0x10'], {})).toThrow('Invalid port: "0x10"')
     expect(() => parseArgs(['--port=1e3'], {})).toThrow('Invalid port: "1e3"')
     expect(() => parseArgs(['--port', ' 4000 '], {})).toThrow('Invalid port: " 4000 "')
     expect(() => parseArgs(['--port', '-1'], {})).toThrow('Invalid port: "-1"')
     expect(() => parseArgs(['--port', '3.5'], {})).toThrow('Invalid port: "3.5"')
+    expect(() => parseArgs([], { PORT: '  ' })).toThrow('Invalid port: "  "')
     expect(() => parseArgs(['--port'], {})).toThrow('--port needs a value')
     expect(() => parseArgs(['--prot', '4000'], {})).toThrow('Unknown option: --prot')
+    expect(() => parseArgs(['-x'], {})).toThrow('Unknown option: -x')
+    expect(() => parseArgs(['foo'], {})).toThrow('Unexpected argument: foo')
+    expect(() => parseArgs(['--', '--port', '4000'], {})).toThrow('Unexpected argument: --port')
+  })
+
+  it('treats an empty PORT as unset', () => {
+    expect(parseArgs([], { PORT: '' })).toEqual({ help: false, port: null, open: true })
+    expect(parseArgs(['--port', '4000'], { PORT: '' }).port).toBe(4000)
   })
 
   it('lists --help in the usage line', () => {
@@ -95,6 +108,15 @@ describe('ports', () => {
   it('pickPort gives up after the attempts', async () => {
     const { port } = await listen()
     await expect(pickPort(port, { attempts: 1 })).rejects.toThrow(/No free port/)
+  })
+
+  it('checkPort explains why a port cannot be used', async () => {
+    const { port } = await listen()
+    expect(await checkPort(port)).toBe('is already in use')
+    servers.pop()!.close()
+    expect(portReason('EADDRINUSE')).toBe('is already in use')
+    expect(portReason('EACCES')).toBe('needs elevated privileges (EACCES)')
+    expect(portReason('EWHATEVER')).toBe('cannot be bound (EWHATEVER)')
   })
 })
 
@@ -132,7 +154,7 @@ describe('health', () => {
     }
   })
 
-  it('waitForHealth stops early when its signal aborts, without a dangling timer', async () => {
+  it('waitForHealth stops early when its signal aborts', async () => {
     const probe = vi.fn<(port: number, host: string) => Promise<boolean>>().mockResolvedValue(false)
     const controller = new AbortController()
     const started = Date.now()
@@ -253,7 +275,7 @@ describe('launch', () => {
     const importServer = vi.fn()
     const env: Record<string, string | undefined> = {}
     expect(await launch({ argv: ['--port', String(port)], env, importServer, log, exit, entry: ENTRY })).toBeNull()
-    expect(log).toHaveBeenCalledWith(`shelfware: port ${port} is already in use on 127.0.0.1; pick another with --port`)
+    expect(log).toHaveBeenCalledWith(`shelfware: port ${port} is already in use on 127.0.0.1; pick another (--port or PORT)`)
     expect(exit).toHaveBeenCalledWith(1)
     expect(importServer).not.toHaveBeenCalled()
     expect(env.NUXT_PUBLIC_SHELFWARE_TOKEN).toBeUndefined()
@@ -274,5 +296,24 @@ describe('launch', () => {
 
   it('serverEntry points at .output/server/index.mjs beside bin/', () => {
     expect(serverEntry('/x/bin')).toBe('/x/.output/server/index.mjs')
+  })
+
+  it('describes non-Error rejections and names both port knobs in the busy-port line', async () => {
+    expect(describeError(new Error('boom'))).toBe('boom')
+    expect(describeError('plain string')).toBe('plain string')
+    expect(describeError(undefined)).toBe('undefined')
+
+    const log = vi.fn()
+    const exit = vi.fn()
+    const importServer = vi.fn(async () => {
+      throw 'not an Error' // eslint-disable-line no-throw-literal
+    })
+    expect(await launch({ argv: ['--port', String(await pickPort(4300))], env: {}, importServer, log, exit, entry: ENTRY })).toBeNull()
+    expect(log).toHaveBeenCalledWith('shelfware: not an Error')
+    expect(exit).toHaveBeenCalledWith(1)
+  })
+
+  it('keeps the token env name in one exported constant', () => {
+    expect(TOKEN_ENV).toBe('NUXT_PUBLIC_SHELFWARE_TOKEN')
   })
 })

@@ -11,6 +11,9 @@ export const DEFAULT_PORT = 3781
 export const PORT_ATTEMPTS = 20
 export const HOST = '127.0.0.1'
 
+/** Spec §10.3: the env var the server reads the session token from. */
+export const TOKEN_ENV = 'NUXT_PUBLIC_SHELFWARE_TOKEN'
+
 export const HELP = `shelfware — a local catalog of the AI-agent skills on this machine
 
 Usage: shelfware [--port <n>] [--no-open] [--help]
@@ -28,22 +31,27 @@ export function makeToken() {
 
 /**
  * The raw text stays in the message so `--port abc` reads back as "abc", not NaN.
- * Digits only: `Number()` would otherwise accept `0x10`, `1e3` and `' 4000 '`,
- * none of which the help text (`--port <n>`) promises.
+ * Decimal digits without a leading zero: `Number()` would otherwise accept `0x10`,
+ * `1e3`, `' 4000 '` and `065535`, none of which the help text (`--port <n>`) promises.
  */
 function parsePort(raw) {
-  if (!/^\d+$/.test(raw)) throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
+  if (!/^[1-9]\d*$/.test(raw)) throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
   const port = Number(raw)
-  if (port < 1 || port > 65535) throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
+  if (port > 65535) throw new Error(`Invalid port: ${JSON.stringify(raw)}`)
   return port
 }
 
 export function parseArgs(argv = [], env = {}) {
   let port = null
   let open = env.SHELFWARE_NO_OPEN !== '1'
+  let optionsEnded = false
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
-    if (arg === '--no-open') {
+    if (optionsEnded || !arg.startsWith('-')) {
+      throw new Error(`Unexpected argument: ${arg}`)
+    } else if (arg === '--') {
+      optionsEnded = true
+    } else if (arg === '--no-open') {
       open = false
     } else if (arg === '--port') {
       if (i + 1 >= argv.length) throw new Error('--port needs a value')
@@ -57,17 +65,30 @@ export function parseArgs(argv = [], env = {}) {
       throw new Error(`Unknown option: ${arg}`)
     }
   }
-  if (port === null && env.PORT) port = parsePort(env.PORT)
+  // Unset or empty means unset; anything else must be a real port.
+  if (port === null && env.PORT !== undefined && env.PORT !== '') port = parsePort(env.PORT)
   return { help: false, port, open }
 }
 
-export function isPortFree(port, host = HOST) {
+/** Why `port` cannot be bound, in words a user can act on. */
+export function portReason(code) {
+  if (code === 'EADDRINUSE') return 'is already in use'
+  if (code === 'EACCES') return 'needs elevated privileges (EACCES)'
+  return `cannot be bound (${code})`
+}
+
+/** Resolves null when `port` can be bound on `host`, otherwise the reason (see `portReason`). */
+export function checkPort(port, host = HOST) {
   return new Promise((resolve) => {
     const server = net.createServer()
     server.unref()
-    server.once('error', () => resolve(false))
-    server.listen({ port, host }, () => server.close(() => resolve(true)))
+    server.once('error', err => resolve(portReason(err.code ?? 'UNKNOWN')))
+    server.listen({ port, host }, () => server.close(() => resolve(null)))
   })
+}
+
+export async function isPortFree(port, host = HOST) {
+  return (await checkPort(port, host)) === null
 }
 
 export async function pickPort(start = DEFAULT_PORT, { attempts = PORT_ATTEMPTS, host = HOST } = {}) {
@@ -132,7 +153,7 @@ export function openBrowser(url, { platform = process.platform, spawn = spawnPro
   const args = platform === 'win32' ? ['/c', 'start', '', url] : [url]
   // The opener execs the browser; strip the session token so it never sits in the
   // browser's environment (the served page is the only place it belongs).
-  const { NUXT_PUBLIC_SHELFWARE_TOKEN: _token, ...childEnv } = env
+  const { [TOKEN_ENV]: _token, ...childEnv } = env
   // A missing browser opener (e.g. no xdg-open on a headless box) must never take
   // the running server down with it: spawn can throw synchronously (rare) or emit
   // an async 'error' (the common ENOENT case), and an unhandled 'error' on an
@@ -149,6 +170,11 @@ export function openBrowser(url, { platform = process.platform, spawn = spawnPro
 
 export function serverEntry(binDir = path.dirname(fileURLToPath(import.meta.url))) {
   return path.resolve(binDir, '..', '.output', 'server', 'index.mjs')
+}
+
+/** One line for the user whatever was thrown: Error, string, or nothing at all. */
+export function describeError(err) {
+  return err instanceof Error ? err.message : String(err)
 }
 
 /**
@@ -168,7 +194,7 @@ export async function launch({
   try {
     args = parseArgs(argv, env)
   } catch (err) {
-    log(`shelfware: ${err.message}`)
+    log(`shelfware: ${describeError(err)}`)
     log(HELP)
     exit(1)
     return null
@@ -182,10 +208,13 @@ export async function launch({
     exit(1)
     return null
   }
-  if (args.port !== null && !(await isPortFree(args.port))) {
-    log(`shelfware: port ${args.port} is already in use on ${HOST}; pick another with --port`)
-    exit(1)
-    return null
+  if (args.port !== null) {
+    const problem = await checkPort(args.port)
+    if (problem) {
+      log(`shelfware: port ${args.port} ${problem} on ${HOST}; pick another (--port or PORT)`)
+      exit(1)
+      return null
+    }
   }
   // Both of these can fail for reasons the user can act on — every port in the
   // range is taken, or the server throws at import (a Nitro crash, or an
@@ -194,13 +223,13 @@ export async function launch({
   let port
   try {
     port = args.port ?? await pickPort(DEFAULT_PORT)
-    env.NUXT_PUBLIC_SHELFWARE_TOKEN = makeToken()
+    env[TOKEN_ENV] = makeToken()
     env.NITRO_HOST = HOST
     env.NITRO_PORT = String(port)
     env.NODE_ENV = 'production'
     await importServer()
   } catch (err) {
-    log(`shelfware: ${err.message}`)
+    log(`shelfware: ${describeError(err)}`)
     exit(1)
     return null
   }
