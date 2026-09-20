@@ -286,7 +286,7 @@ function walkSkillContainers(dir: string, root: Root, list: FoundItem[], depth =
   const entries = readDirents(dir)
   const base = path.basename(dir)
   if (base === 'skills' || base === 'skill') {
-    collectDirectSkills({ ...root, root: dir }, list)
+    collectDirectSkills({ ...root, root: dir }, list, root.deep === true)
     return
   }
   for (const entry of entries) {
@@ -536,10 +536,12 @@ export function scanRoots(roots: Root[], opts?: HomeOptions): ScanIndex {
   const realpaths = new Map<string, string>()
   const found: FoundItem[] = []
   for (const root of roots) {
-    if (root.deep) {
-      collectDirectSkills(root, found, true)
-    } else if (root.recursive) {
+    // `recursive` first: it only adopts inside a skills/ container, while a deep
+    // collect from the root would take every loose *.md of a repository checkout.
+    if (root.recursive) {
       walkSkillContainers(root.root, root, found)
+    } else if (root.deep) {
+      collectDirectSkills(root, found, true)
     } else {
       collectDirectSkills(root, found)
     }
