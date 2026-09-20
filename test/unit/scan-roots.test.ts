@@ -39,7 +39,7 @@ describe('path helpers', () => {
     expect(idFor('/tmp/x')).not.toBe(idFor('/tmp/y'))
   })
 
-  it('isSkillFileName accepts SKILL.md, skill.md and loose *.md except readme/changelog/license', () => {
+  it('isSkillFileName accepts SKILL.md, skill.md and loose *.md except repository documents', () => {
     expect(isSkillFileName('SKILL.md')).toBe(true)
     expect(isSkillFileName('skill.md')).toBe(true)
     expect(isSkillFileName('note.md')).toBe(true)
@@ -48,6 +48,10 @@ describe('path helpers', () => {
     expect(isSkillFileName('CHANGELOG.md')).toBe(false)
     expect(isSkillFileName('LICENSE.md')).toBe(false)
     expect(isSkillFileName('licence.md')).toBe(false)
+    expect(isSkillFileName('security.md')).toBe(false)
+    expect(isSkillFileName('CONTRIBUTING.md')).toBe(false)
+    expect(isSkillFileName('pull_request_template.md')).toBe(false)
+    expect(isSkillFileName('readme.ko.md')).toBe(false)
     expect(isSkillFileName('notes.txt')).toBe(false)
   })
 

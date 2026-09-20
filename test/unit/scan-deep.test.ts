@@ -101,3 +101,16 @@ describe('plugin drawers', () => {
     expect(index.skills.map(s => s.slug)).toEqual(['plug-one'])
   })
 })
+
+describe('repository documents inside a drawer', () => {
+  it('does not turn them into cards', () => {
+    const dir = home('shelfware-docs-')
+    const container = path.join(dir, '.claude', 'plugins', 'marketplaces', 'mart', 'skills', 'engineering')
+    writeSkill(path.join(container, 'market-one'), skillText('market-one', 'a real skill'))
+    for (const name of ['security.md', 'contributing.md', 'description.md', 'readme.es.md']) {
+      writeTextFile(path.join(container, name), skillText(name.replace('.md', ''), 'a repo document'))
+    }
+    const index = scanRoots(discoverRoots({ home: dir }), { home: dir })
+    expect(index.skills.map(s => s.slug)).toEqual(['market-one'])
+  })
+})

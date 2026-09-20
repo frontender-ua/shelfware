@@ -104,7 +104,21 @@ export function idFor(absPath: string): string {
 }
 
 const NAMED_SKILL_FILES = new Set(['skill.md', 'SKILL.md'])
-const IGNORE_LOOSE_MD = new Set(['readme.md', 'changelog.md', 'license.md', 'licence.md'])
+/** Repository documents that live beside skills in a checkout and are not skills. */
+const IGNORE_LOOSE_MD = new Set([
+  'readme.md',
+  'readme.es.md',
+  'readme.ko.md',
+  'changelog.md',
+  'license.md',
+  'licence.md',
+  'description.md',
+  'security.md',
+  'contributing.md',
+  'pull_request_template.md',
+  'access.md',
+  'benchmark.md',
+])
 
 export function isSkillFileName(name: string): boolean {
   if (NAMED_SKILL_FILES.has(name)) return true
