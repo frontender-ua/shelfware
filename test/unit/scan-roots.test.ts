@@ -118,7 +118,7 @@ describe('discoverRoots', () => {
     })
     expect(byId.get('codex')?.root).toBe(path.join(home, '.codex', 'skills'))
     expect(byId.get('cursor-builtin')).toMatchObject({ scopeLabel: '.cursor/skills-cursor', kind: 'builtin', recursive: false })
-    expect(byId.get('cursor-plugins')).toMatchObject({ scopeLabel: '.cursor/plugins', kind: 'plugin', recursive: true })
+    expect(byId.get('cursor-plugins')).toMatchObject({ scopeLabel: '.cursor/plugins', kind: 'plugin', recursive: true, deep: true })
     expect(byId.get('hermes-profile:coding')).toMatchObject({ scopeLabel: 'Hermes profile · coding', kind: 'user', deep: true })
 
     const gemini = roots.filter(r => r.scopeId === 'gemini')

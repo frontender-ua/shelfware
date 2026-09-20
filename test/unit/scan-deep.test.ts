@@ -58,3 +58,46 @@ describe('generic $HOME drawers', () => {
     expect(index.skills.map(s => s.slug).sort()).toEqual(['agent-nested', 'flat-one', 'skill-creator'])
   })
 })
+
+describe('plugin drawers', () => {
+  it('splits cache and marketplaces into their own drawers and never adopts the parent twice', () => {
+    const dir = home('shelfware-plugins-')
+    writeSkill(
+      path.join(dir, '.claude', 'plugins', 'cache', 'mart', 'plug', '1.0.0', 'skills', 'engineering', 'cached-one'),
+      skillText('cached-one', 'installed from a marketplace'),
+    )
+    writeSkill(
+      path.join(dir, '.claude', 'plugins', 'marketplaces', 'mart', 'skills', 'engineering', 'market-one'),
+      skillText('market-one', 'the marketplace checkout'),
+    )
+
+    const roots = discoverRoots({ home: dir })
+    const byId = new Map(roots.map(r => [r.scopeId, r]))
+    expect(byId.get('claude-plugins-cache')).toMatchObject({
+      scopeLabel: '.claude/plugins/cache', kind: 'plugin', recursive: true, deep: true,
+    })
+    expect(byId.get('claude-plugins-marketplaces')).toMatchObject({
+      scopeLabel: '.claude/plugins/marketplaces', kind: 'plugin', recursive: true, deep: true,
+    })
+    expect(byId.has('claude-plugins')).toBe(false)
+    expect(roots.some(r => r.root === path.join(dir, '.claude', 'plugins'))).toBe(false)
+
+    const index = scanRoots(roots, { home: dir })
+    expect(index.skills.map(s => s.slug).sort()).toEqual(['cached-one', 'market-one'])
+    expect(index.skills.find(s => s.slug === 'cached-one')?.scopeId).toBe('claude-plugins-cache')
+  })
+
+  it('adopts a plugins folder without those subfolders as one drawer', () => {
+    const dir = home('shelfware-plugins-flat-')
+    writeSkill(
+      path.join(dir, '.cursor', 'plugins', 'p', 'skills', 'plug-one'),
+      skillText('plug-one', 'from a cursor plugin'),
+    )
+    const roots = discoverRoots({ home: dir })
+    expect(roots.find(r => r.scopeId === 'cursor-plugins')).toMatchObject({
+      scopeLabel: '.cursor/plugins', kind: 'plugin', recursive: true, deep: true,
+    })
+    const index = scanRoots(roots, { home: dir })
+    expect(index.skills.map(s => s.slug)).toEqual(['plug-one'])
+  })
+})

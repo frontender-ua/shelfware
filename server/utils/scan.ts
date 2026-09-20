@@ -61,6 +61,13 @@ export const SKIP_HOME_DOTDIRS: ReadonlySet<string> = new Set([
 
 export const SKIP_WALK: ReadonlySet<string> = new Set(['node_modules', '.git', 'dist', '.cache', 'upstream'])
 
+/**
+ * Plugin trees tools keep side by side under `<dotdir>/plugins`: `cache` is what
+ * an agent reads, `marketplaces` holds the catalogue checkouts it installs from.
+ * Each becomes its own drawer; a `plugins` folder without them is one drawer.
+ */
+export const PLUGIN_SPLITS: readonly string[] = ['cache', 'marketplaces']
+
 export function pathExists(p: string): boolean {
   try {
     return fs.existsSync(p)
@@ -194,9 +201,20 @@ export function discoverRoots(opts?: HomeOptions): Root[] {
       add(scopeId, entry.name, path.join(base, folder), 'user', false, true)
     }
 
+    // The branches are exclusive: add() deduplicates by resolved path, not by
+    // containment, so adopting `plugins` beside `plugins/cache` would count twice.
+    const pluginsRoot = path.join(base, 'plugins')
+    const splits = PLUGIN_SPLITS.filter(name => isDir(path.join(pluginsRoot, name)))
+    if (splits.length > 0) {
+      for (const name of splits) {
+        add(`${scopeId}-plugins-${name}`, `${entry.name}/plugins/${name}`, path.join(pluginsRoot, name), 'plugin', true, true)
+      }
+    } else {
+      add(`${scopeId}-plugins`, `${entry.name}/plugins`, pluginsRoot, 'plugin', true, true)
+    }
+
     if (entry.name === '.cursor') {
       add('cursor-builtin', '.cursor/skills-cursor', path.join(base, 'skills-cursor'), 'builtin', false)
-      add('cursor-plugins', '.cursor/plugins', path.join(base, 'plugins'), 'plugin', true)
     }
   }
 
