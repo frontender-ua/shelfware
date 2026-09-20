@@ -2,7 +2,7 @@
 
 shelfware finds the shelfware in your skill drawers.
 
-A local catalog of the AI-agent skills installed on this machine: every `~/.<tool>/skills` drawer (`~/.claude/skills`, `~/.cursor/skills`, `~/.codex/skills`, `~/.agents/skills`, a custom `~/.claude-work/skills`, …), Cursor plugins, Gemini Antigravity, Hermes profiles, and friends. It scans, lists, searches, renders, **edits**, audits, quarantines, restores, and permanently deletes skills, from a browser tab that only your machine can reach.
+A local catalog of the AI-agent skills installed on this machine: every `~/.<tool>/skills` drawer (`~/.claude/skills`, `~/.cursor/skills`, `~/.codex/skills`, `~/.agents/skills`, a custom `~/.claude-work/skills`, …), the plugin trees beside them (`~/.<tool>/plugins`, split into the installed `cache` and `marketplaces` checkouts where a tool keeps them apart — one `plugins` drawer otherwise), Cursor plugins, Gemini Antigravity, Hermes profiles, and friends. It scans, lists, searches, renders, **edits**, audits, quarantines, restores, and permanently deletes skills, from a browser tab that only your machine can reach.
 
 ![shelfware in dark mode: drawers on the left, the card list in the middle, the selected skill with its audit finding on the right](docs/screenshot_dark.png)
 
@@ -20,7 +20,7 @@ Node 20 or newer. No build step: the package ships the prebuilt app. For a perma
 
 ### First run
 
-Starting shelfware only reads. It walks the hidden directories directly under your home (`$HOME`), skipping caches and toolchains, and picks up every `skills/` (or `skill/`) folder it finds, plus the Cursor, Gemini Antigravity and Hermes locations above. Nothing on disk changes until you quarantine, restore, delete or save a skill yourself.
+Starting shelfware only reads. It walks the hidden directories directly under your home (`$HOME`), skipping caches and toolchains, and picks up every `skills/` (or `skill/`) folder it finds — including skills grouped into sub-folders inside it, such as `~/.codex/skills/.system/<skill>` — plus each tool's `plugins/` tree and the Cursor, Gemini Antigravity and Hermes locations above. Inside a plugin tree only folders named `skills/` (or `skill/`) are read, so a plugin's own README, its `docs/`, and its source outside those folders are never catalogued; inside those folders, familiar repository documents — README, CHANGELOG, LICENCE, CONTRIBUTING, SECURITY and the rest of a short ignore list — are skipped, while any other loose `*.md` still becomes a card. Nothing on disk changes until you quarantine, restore, delete or save a skill yourself.
 
 Skills outside your home directory (project-level `.claude/skills` inside a repository, an arbitrary path) are not scanned in v0.1; a `--root <path>` flag is planned. To scan a different home, run `HOME=/other/home npx shelfware@latest`.
 
@@ -29,7 +29,7 @@ Skills outside your home directory (project-level `.claude/skills` inside a repo
 - **`npx shelfware` prints "coming soon".** Your npx cache still holds the `0.0.1` placeholder. Run `npx shelfware@latest` once; npx then caches the real release.
 - **The browser did not open.** Copy the URL from the `shelfware at http://127.0.0.1:<port>` line, or start with `--no-open` and open it yourself.
 - **Port in use.** An explicit `--port <n>` that is taken is refused at once with a one-line message; without either the flag or PORT shelfware tries 3781 through 3800. A typo in a flag prints the message and the help text instead of a stack trace.
-- **The catalog is empty.** Check that your skills live under `$HOME/.<tool>/skills`; other locations are not scanned yet.
+- **The catalog is empty.** Check that your skills live under `$HOME/.<tool>/skills`, `$HOME/.<tool>/plugins`, or one of the Cursor, Gemini Antigravity or Hermes locations above; other locations are not scanned yet.
 
 ## What you get
 
