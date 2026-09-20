@@ -384,3 +384,35 @@ describe.skipIf(!linkHomeOk)('quarantine with a symlinked HOME', () => {
     expect(back.to).toBe(path.join(LINK_HOME_REAL, '.codex', 'skills', 'charlie'))
   })
 })
+
+/**
+ * Regression: `~/.claude/skills/shared -> ~/Develop/my-skills` makes every
+ * skill under the link look lexically like a drawer entry. Neither the walk
+ * nor the destructive guard may treat one as such: quarantining it would
+ * rename the user's own repository directory away.
+ */
+const SHARED_HOME = tempDir('shelfware-qshared-')
+afterAll(() => {
+  fs.rmSync(SHARED_HOME, { recursive: true, force: true })
+})
+
+describe.skipIf(!LINK_KIND)('a skill reached through a symlinked drawer entry', () => {
+  const shared = { home: SHARED_HOME }
+
+  it('is neither catalogued nor quarantined, and the real directory survives', () => {
+    const drawer = path.join(SHARED_HOME, '.agents', 'skills')
+    fs.mkdirSync(drawer, { recursive: true })
+    const outside = path.join(SHARED_HOME, 'repo', 'my-skills')
+    const real = writeSkill(path.join(outside, 'kilo'), 'kilo')
+    fs.symlinkSync(outside, path.join(drawer, 'shared'), LINK_KIND!)
+    const through = path.join(drawer, 'shared', 'kilo')
+
+    const index = scanSkills(shared)
+    expect(index.skills.some(s => path.resolve(s.path) === through)).toBe(false)
+
+    const card = { path: through, name: 'kilo', slug: 'kilo', scopeId: 'agents', scopeLabel: '.agents', kind: 'user' as const }
+    expect(() => quarantineSkill(card, index.roots, shared)).toThrow(expect.objectContaining({ status: 403 }))
+    expect(occupied(path.join(real, 'SKILL.md'))).toBe(true)
+    expect(occupied(through)).toBe(true)
+  })
+})

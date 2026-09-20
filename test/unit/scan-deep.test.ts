@@ -114,3 +114,36 @@ describe('repository documents inside a drawer', () => {
     expect(index.skills.map(s => s.slug)).toEqual(['market-one'])
   })
 })
+
+describe('a symlinked directory inside a deep drawer', () => {
+  it('is never descended into, so nothing outside the drawer is catalogued through it', () => {
+    const dir = home('shelfware-symlink-')
+    const outside = path.join(dir, 'Projects', 'my-skills')
+    writeSkill(path.join(outside, 'alpha'), skillText('alpha', 'lives in the user repository'))
+    const drawer = path.join(dir, '.claude', 'skills')
+    fs.mkdirSync(drawer, { recursive: true })
+    fs.symlinkSync(outside, path.join(drawer, 'shared'))
+
+    const index = scanRoots(discoverRoots({ home: dir }), { home: dir })
+
+    const through = path.join(drawer, 'shared') + path.sep
+    expect(index.skills.filter(s => s.path.startsWith(through))).toEqual([])
+    expect(index.skills.map(s => s.slug)).toEqual([])
+    expect(fs.existsSync(path.join(outside, 'alpha', 'SKILL.md'))).toBe(true)
+  })
+
+  it('still becomes a reference card when it holds its own skill file', () => {
+    const dir = home('shelfware-symlink-card-')
+    const target = writeSkill(path.join(dir, 'Projects', 'my-skills', 'beta'), skillText('beta', 'linked into the drawer'))
+    const drawer = path.join(dir, '.claude', 'skills')
+    fs.mkdirSync(drawer, { recursive: true })
+    fs.symlinkSync(target, path.join(drawer, 'beta'))
+
+    const index = scanRoots(discoverRoots({ home: dir }), { home: dir })
+
+    const card = index.skills.find(s => s.slug === 'beta')!
+    expect(card.path).toBe(path.join(drawer, 'beta'))
+    expect(card.physicality).toBe('reference')
+    expect(card.refTarget).toBe(fs.realpathSync(target))
+  })
+})

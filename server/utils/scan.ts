@@ -304,7 +304,11 @@ function collectDirectSkills(root: Root, list: FoundItem[], nested = false, dept
       const skillMd = findSkillFile(abs)
       if (skillMd) {
         list.push({ dir: abs, skillMd, root, ...install, file: false })
-      } else if (nested) {
+      } else if (nested && !install.link) {
+        // Never descend through a symlink: a skill found under one would carry
+        // a path that only looks like a drawer entry while it really lives
+        // wherever the link points. A symlinked directory that holds a skill
+        // file of its own is still catalogued above, as a reference.
         collectDirectSkills({ ...root, root: abs }, list, true, depth + 1)
       }
       continue
@@ -685,11 +689,21 @@ export function readSkillFile(summary: Pick<SkillSummary, 'file' | 'skillFile' |
  * Spec §5.6: the target must be inside a discovered root, not equal to it,
  * not `home`, and still look like a skill (dead link, folder with a skill
  * file, or a file with a skill file name).
+ *
+ * Containment is checked twice: lexically, and again against real paths, the
+ * way `saveSkillSource` resolves a write target. Only the parent directory is
+ * resolved, never the target itself — a skill that *is* a symlink stays
+ * quarantinable and deletable (the link is unlinked, its target stays), while
+ * a target reached *through* a symlinked ancestor resolves outside the drawer
+ * and is refused before anything is renamed or removed.
  */
 export function assertSkillTarget(summary: { path: string }, roots: readonly { root: string }[], action = 'delete', opts?: HomeOptions): string {
   const target = path.resolve(summary.path)
   const inside = roots.some(r => contained(target, r.root))
   if (!inside) throw fail(403, 'Skill is outside known cabinet roots')
+  const real = path.join(realPath(path.dirname(target)), path.basename(target))
+  const reallyInside = roots.some(r => contained(real, realPath(r.root)))
+  if (!reallyInside) throw fail(403, 'Skill resolves outside known cabinet roots')
   const isRoot = roots.some(r => path.resolve(r.root) === target)
   if (isRoot || target === homeOf(opts)) throw fail(403, `Refusing to ${action} a cabinet root`)
   const install = describeInstall(target)
