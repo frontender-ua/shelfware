@@ -12,6 +12,9 @@ export function skillText(name: string, description: string, body = 'Body.\n'): 
 
 export const TWIN_TEXT = skillText('twin', 'a twin skill')
 
+/** The same skill installed in the plugin cache and present in the marketplace checkout. */
+export const PLUGIN_TWIN_TEXT = skillText('cached-one', 'a plugin skill that exists in both trees')
+
 export function writeTextFile(file: string, text: string): string {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, text, 'utf8')
@@ -46,6 +49,11 @@ export interface FixturePaths {
   hermes: string
   cacheIgnored: string
   cabinetIgnored: string
+  agentsNested: string
+  pluginCache: string
+  pluginMarket: string
+  pluginMarketDoc: string
+  pluginMarketLoose: string
 }
 
 export interface FixtureHome {
@@ -101,6 +109,26 @@ export function createFixtureHome(): FixtureHome {
     hermes: writeSkill(
       path.join(home, '.hermes', 'profiles', 'coding', 'skills', 'nested', 'deep-research'),
       skillText('deep-research', 'nested hermes skill'),
+    ),
+    agentsNested: writeSkill(
+      path.join(home, '.agents', 'skills', '.system', 'agent-nested'),
+      skillText('agent-nested', 'nested under a dot directory'),
+    ),
+    pluginCache: writeSkill(
+      path.join(home, '.claude', 'plugins', 'cache', 'mart', 'plug', '1.0.0', 'skills', 'engineering', 'cached-one'),
+      PLUGIN_TWIN_TEXT,
+    ),
+    pluginMarket: writeSkill(
+      path.join(home, '.claude', 'plugins', 'marketplaces', 'mart', 'skills', 'engineering', 'cached-one'),
+      PLUGIN_TWIN_TEXT,
+    ),
+    pluginMarketDoc: writeTextFile(
+      path.join(home, '.claude', 'plugins', 'marketplaces', 'mart', 'skills', 'engineering', 'security.md'),
+      skillText('security', 'a repo document, not a skill'),
+    ),
+    pluginMarketLoose: writeTextFile(
+      path.join(home, '.claude', 'plugins', 'marketplaces', 'mart', 'CONTEXT.md'),
+      skillText('context', 'outside any skills container'),
     ),
     cacheIgnored: writeSkill(path.join(home, '.cache', 'skills', 'ignored'), skillText('ignored', 'denylisted')),
     cabinetIgnored: writeSkill(path.join(home, '.skill-cabinet', 'skills', 'ignored'), skillText('ignored', 'denylisted too')),

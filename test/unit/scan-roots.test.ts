@@ -146,7 +146,8 @@ describe('discoverRoots', () => {
 
   it('deduplicates drawers that resolve to the same realpath', () => {
     const { home } = fixture()
-    fs.symlinkSync(path.join(home, '.claude'), path.join(home, '.agents'))
+    // `.other` (not `.agents`): createFixtureHome() now plants a real `.agents` drawer.
+    fs.symlinkSync(path.join(home, '.claude'), path.join(home, '.other'))
     const roots = discoverRoots({ home })
     const claudeSkills = fs.realpathSync(path.join(home, '.claude', 'skills'))
     expect(roots.filter(r => r.root === claudeSkills)).toHaveLength(1)
