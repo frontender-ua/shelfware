@@ -39,7 +39,7 @@ describe('path helpers', () => {
     expect(idFor('/tmp/x')).not.toBe(idFor('/tmp/y'))
   })
 
-  it('isSkillFileName accepts SKILL.md, skill.md and loose *.md except readme/changelog/license', () => {
+  it('isSkillFileName accepts SKILL.md, skill.md and loose *.md except repository documents', () => {
     expect(isSkillFileName('SKILL.md')).toBe(true)
     expect(isSkillFileName('skill.md')).toBe(true)
     expect(isSkillFileName('note.md')).toBe(true)
@@ -48,6 +48,10 @@ describe('path helpers', () => {
     expect(isSkillFileName('CHANGELOG.md')).toBe(false)
     expect(isSkillFileName('LICENSE.md')).toBe(false)
     expect(isSkillFileName('licence.md')).toBe(false)
+    expect(isSkillFileName('security.md')).toBe(false)
+    expect(isSkillFileName('CONTRIBUTING.md')).toBe(false)
+    expect(isSkillFileName('pull_request_template.md')).toBe(false)
+    expect(isSkillFileName('readme.ko.md')).toBe(false)
     expect(isSkillFileName('notes.txt')).toBe(false)
   })
 
@@ -114,11 +118,11 @@ describe('discoverRoots', () => {
     const byId = new Map(roots.map(r => [r.scopeId, r]))
 
     expect(byId.get('claude')).toEqual({
-      scopeId: 'claude', scopeLabel: '.claude', root: path.join(home, '.claude', 'skills'), kind: 'user', recursive: false, deep: false,
+      scopeId: 'claude', scopeLabel: '.claude', root: path.join(home, '.claude', 'skills'), kind: 'user', recursive: false, deep: true,
     })
     expect(byId.get('codex')?.root).toBe(path.join(home, '.codex', 'skills'))
     expect(byId.get('cursor-builtin')).toMatchObject({ scopeLabel: '.cursor/skills-cursor', kind: 'builtin', recursive: false })
-    expect(byId.get('cursor-plugins')).toMatchObject({ scopeLabel: '.cursor/plugins', kind: 'plugin', recursive: true })
+    expect(byId.get('cursor-plugins')).toMatchObject({ scopeLabel: '.cursor/plugins', kind: 'plugin', recursive: true, deep: true })
     expect(byId.get('hermes-profile:coding')).toMatchObject({ scopeLabel: 'Hermes profile · coding', kind: 'user', deep: true })
 
     const gemini = roots.filter(r => r.scopeId === 'gemini')
@@ -142,7 +146,8 @@ describe('discoverRoots', () => {
 
   it('deduplicates drawers that resolve to the same realpath', () => {
     const { home } = fixture()
-    fs.symlinkSync(path.join(home, '.claude'), path.join(home, '.agents'))
+    // `.other` (not `.agents`): createFixtureHome() now plants a real `.agents` drawer.
+    fs.symlinkSync(path.join(home, '.claude'), path.join(home, '.other'))
     const roots = discoverRoots({ home })
     const claudeSkills = fs.realpathSync(path.join(home, '.claude', 'skills'))
     expect(roots.filter(r => r.root === claudeSkills)).toHaveLength(1)

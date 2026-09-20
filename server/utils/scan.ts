@@ -61,6 +61,13 @@ export const SKIP_HOME_DOTDIRS: ReadonlySet<string> = new Set([
 
 export const SKIP_WALK: ReadonlySet<string> = new Set(['node_modules', '.git', 'dist', '.cache', 'upstream'])
 
+/**
+ * Plugin trees tools keep side by side under `<dotdir>/plugins`: `cache` is what
+ * an agent reads, `marketplaces` holds the catalogue checkouts it installs from.
+ * Each becomes its own drawer; a `plugins` folder without them is one drawer.
+ */
+export const PLUGIN_SPLITS: readonly string[] = ['cache', 'marketplaces']
+
 export function pathExists(p: string): boolean {
   try {
     return fs.existsSync(p)
@@ -97,7 +104,21 @@ export function idFor(absPath: string): string {
 }
 
 const NAMED_SKILL_FILES = new Set(['skill.md', 'SKILL.md'])
-const IGNORE_LOOSE_MD = new Set(['readme.md', 'changelog.md', 'license.md', 'licence.md'])
+/** Repository documents that live beside skills in a checkout and are not skills. */
+const IGNORE_LOOSE_MD = new Set([
+  'readme.md',
+  'readme.es.md',
+  'readme.ko.md',
+  'changelog.md',
+  'license.md',
+  'licence.md',
+  'description.md',
+  'security.md',
+  'contributing.md',
+  'pull_request_template.md',
+  'access.md',
+  'benchmark.md',
+])
 
 export function isSkillFileName(name: string): boolean {
   if (NAMED_SKILL_FILES.has(name)) return true
@@ -188,13 +209,26 @@ export function discoverRoots(opts?: HomeOptions): Root[] {
     const base = path.join(home, entry.name)
     const scopeId = entry.name.slice(1)
 
+    // deep: tools nest skills by category or under a dot directory
+    // (`~/.codex/skills/.system/<skill>`, `skills/<category>/<skill>`).
     for (const folder of ['skills', 'skill']) {
-      add(scopeId, entry.name, path.join(base, folder), 'user', false)
+      add(scopeId, entry.name, path.join(base, folder), 'user', false, true)
+    }
+
+    // The branches are exclusive: add() deduplicates by resolved path, not by
+    // containment, so adopting `plugins` beside `plugins/cache` would count twice.
+    const pluginsRoot = path.join(base, 'plugins')
+    const splits = PLUGIN_SPLITS.filter(name => isDir(path.join(pluginsRoot, name)))
+    if (splits.length > 0) {
+      for (const name of splits) {
+        add(`${scopeId}-plugins-${name}`, `${entry.name}/plugins/${name}`, path.join(pluginsRoot, name), 'plugin', true, true)
+      }
+    } else {
+      add(`${scopeId}-plugins`, `${entry.name}/plugins`, pluginsRoot, 'plugin', true, true)
     }
 
     if (entry.name === '.cursor') {
       add('cursor-builtin', '.cursor/skills-cursor', path.join(base, 'skills-cursor'), 'builtin', false)
-      add('cursor-plugins', '.cursor/plugins', path.join(base, 'plugins'), 'plugin', true)
     }
   }
 
@@ -270,7 +304,11 @@ function collectDirectSkills(root: Root, list: FoundItem[], nested = false, dept
       const skillMd = findSkillFile(abs)
       if (skillMd) {
         list.push({ dir: abs, skillMd, root, ...install, file: false })
-      } else if (nested) {
+      } else if (nested && !install.link) {
+        // Never descend through a symlink: a skill found under one would carry
+        // a path that only looks like a drawer entry while it really lives
+        // wherever the link points. A symlinked directory that holds a skill
+        // file of its own is still catalogued above, as a reference.
         collectDirectSkills({ ...root, root: abs }, list, true, depth + 1)
       }
       continue
@@ -286,7 +324,7 @@ function walkSkillContainers(dir: string, root: Root, list: FoundItem[], depth =
   const entries = readDirents(dir)
   const base = path.basename(dir)
   if (base === 'skills' || base === 'skill') {
-    collectDirectSkills({ ...root, root: dir }, list)
+    collectDirectSkills({ ...root, root: dir }, list, root.deep === true)
     return
   }
   for (const entry of entries) {
@@ -536,10 +574,12 @@ export function scanRoots(roots: Root[], opts?: HomeOptions): ScanIndex {
   const realpaths = new Map<string, string>()
   const found: FoundItem[] = []
   for (const root of roots) {
-    if (root.deep) {
-      collectDirectSkills(root, found, true)
-    } else if (root.recursive) {
+    // `recursive` first: it only adopts inside a skills/ container, while a deep
+    // collect from the root would take every loose *.md of a repository checkout.
+    if (root.recursive) {
       walkSkillContainers(root.root, root, found)
+    } else if (root.deep) {
+      collectDirectSkills(root, found, true)
     } else {
       collectDirectSkills(root, found)
     }
@@ -649,11 +689,21 @@ export function readSkillFile(summary: Pick<SkillSummary, 'file' | 'skillFile' |
  * Spec §5.6: the target must be inside a discovered root, not equal to it,
  * not `home`, and still look like a skill (dead link, folder with a skill
  * file, or a file with a skill file name).
+ *
+ * Containment is checked twice: lexically, and again against real paths, the
+ * way `saveSkillSource` resolves a write target. Only the parent directory is
+ * resolved, never the target itself — a skill that *is* a symlink stays
+ * quarantinable and deletable (the link is unlinked, its target stays), while
+ * a target reached *through* a symlinked ancestor resolves outside the drawer
+ * and is refused before anything is renamed or removed.
  */
 export function assertSkillTarget(summary: { path: string }, roots: readonly { root: string }[], action = 'delete', opts?: HomeOptions): string {
   const target = path.resolve(summary.path)
   const inside = roots.some(r => contained(target, r.root))
   if (!inside) throw fail(403, 'Skill is outside known cabinet roots')
+  const real = path.join(realPath(path.dirname(target)), path.basename(target))
+  const reallyInside = roots.some(r => contained(real, realPath(r.root)))
+  if (!reallyInside) throw fail(403, 'Skill resolves outside known cabinet roots')
   const isRoot = roots.some(r => path.resolve(r.root) === target)
   if (isRoot || target === homeOf(opts)) throw fail(403, `Refusing to ${action} a cabinet root`)
   const install = describeInstall(target)

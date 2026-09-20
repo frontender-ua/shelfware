@@ -6,7 +6,7 @@ import { $fetch, fetch, setup, url } from '@nuxt/test-utils/e2e'
 import type { CatalogResponse, DeleteResult, FilePreview, QuarantineResult, RestoreResult, SkillDetail } from '../../shared/types/catalog'
 import { readManifest } from '../../server/utils/quarantine'
 import { tokenEstimateFor } from '../../server/utils/scan'
-import { createFixtureHome, TWIN_TEXT } from '../helpers/fixture-home'
+import { createFixtureHome, PLUGIN_TWIN_TEXT, TWIN_TEXT } from '../helpers/fixture-home'
 import { rawRequest } from '../helpers/raw-http'
 import { installUpstreamFixture } from '../helpers/upstream-fixture'
 
@@ -20,7 +20,7 @@ export const TOKEN = `sw_${'ab'.repeat(32)}`
  * Block order is an invariant: these blocks share one mutable fixture HOME and
  * run in file order, so a new block must be appended after `editor`.
  *
- * - `catalog` asserts the pristine counts (17 live cards, claude 11, gemini 2,
+ * - `catalog` asserts the pristine counts (20 live cards, claude 11, gemini 2,
  *   and the census totals) and must run first, before any mutation.
  * - `mutation guard` only probes rejections and empty batches; it never
  *   mutates the fixture.
@@ -93,9 +93,9 @@ describe('shelfware api', async () => {
       expect(catalog.home).toBe(HOME)
       expect(catalog.quarantineRoot).toBe(path.join(HOME, '.skill-cabinet', 'quarantine'))
       expect(catalog.scannedAt).toBeGreaterThan(0)
-      expect(catalog.total).toBe(17)
-      expect(catalog.census).toMatchObject({ total: 17, physical: 15, unique: 14, duplicateCopies: 2, duplicates: 2, references: 1, broken: 1 })
-      expect(catalog.census.duplicateBytes).toBe(2 * Buffer.byteLength(TWIN_TEXT))
+      expect(catalog.total).toBe(20)
+      expect(catalog.census).toMatchObject({ total: 20, physical: 18, unique: 16, duplicateCopies: 4, duplicates: 4, references: 1, broken: 1 })
+      expect(catalog.census.duplicateBytes).toBe(2 * Buffer.byteLength(TWIN_TEXT) + 2 * Buffer.byteLength(PLUGIN_TWIN_TEXT))
       const physicalTokens = catalog.skills
         .filter(s => !s.quarantined && s.physicality === 'physical')
         .reduce((sum, s) => sum + s.tokenEstimate, 0)
@@ -103,11 +103,24 @@ describe('shelfware api', async () => {
       expect(physicalTokens).toBeGreaterThan(0)
 
       expect(catalog.scopes.map(s => s.id).sort()).toEqual(
-        ['claude', 'codex', 'cursor-builtin', 'cursor-plugins', 'gemini', 'hermes-profile:coding'],
+        [
+          'agents',
+          'claude',
+          'claude-plugins-cache',
+          'claude-plugins-marketplaces',
+          'codex',
+          'cursor-builtin',
+          'cursor-plugins',
+          'gemini',
+          'hermes-profile:coding',
+        ],
       )
       expect(catalog.scopes.find(s => s.id === 'claude')).toMatchObject({ label: '.claude', kind: 'user', count: 11 })
       expect(catalog.scopes.find(s => s.id === 'gemini')?.count).toBe(2)
       expect(catalog.scopes.find(s => s.id === 'cursor-plugins')).toMatchObject({ kind: 'plugin', count: 1 })
+      expect(catalog.scopes.find(s => s.id === 'claude-plugins-cache')).toMatchObject({
+        label: '.claude/plugins/cache', kind: 'plugin', count: 1,
+      })
 
       const by = (slug: string) => catalog.skills.find(s => s.slug === slug)!
       expect(by('deep-research').scopeLabel).toBe('Hermes profile · coding')
@@ -115,6 +128,10 @@ describe('shelfware api', async () => {
       expect(by('builtin-one').kind).toBe('builtin')
       expect(catalog.skills.some(s => s.slug === 'nope')).toBe(false)
       expect(catalog.skills.some(s => s.slug === 'ignored')).toBe(false)
+      expect(catalog.skills.some(s => s.slug === 'security')).toBe(false)
+      expect(catalog.skills.some(s => s.slug === 'context')).toBe(false)
+      expect(catalog.skills.filter(s => s.slug === 'cached-one').map(s => s.scopeId).sort())
+        .toEqual(['claude-plugins-cache', 'claude-plugins-marketplaces'])
       expect(by('note')).toMatchObject({ file: true, skillRel: 'note.md' })
       expect(by('dead')).toMatchObject({ physicality: 'broken', link: true, tokenEstimate: 0 })
       expect(by('linked')).toMatchObject({ physicality: 'reference', refSkillId: '', refTarget: PATHS.linkedTarget })
@@ -268,7 +285,7 @@ describe('shelfware api', async () => {
       expect(fs.existsSync(PATHS.bravo)).toBe(false)
 
       const during = await $fetch<CatalogResponse>('/api/skills')
-      expect(during.total).toBe(16)
+      expect(during.total).toBe(19)
       expect(during.scopes.some(s => s.id === 'codex')).toBe(false)
       const held = during.skills.find(s => s.slug === 'bravo')!
       expect(held).toMatchObject({ quarantined: true, scopeId: 'quarantine', scopeLabel: 'Quarantine', fromScope: 'codex', kind: 'quarantine' })
@@ -286,7 +303,7 @@ describe('shelfware api', async () => {
       expect(readManifest({ home: HOME }).entries.some(e => e.originPath === PATHS.bravo)).toBe(false)
 
       const after = await $fetch<CatalogResponse>('/api/skills')
-      expect(after.total).toBe(17)
+      expect(after.total).toBe(20)
       expect(after.skills.find(s => s.slug === 'bravo')).toMatchObject({ id: bravo.id, quarantined: false, scopeId: 'codex' })
     })
   })

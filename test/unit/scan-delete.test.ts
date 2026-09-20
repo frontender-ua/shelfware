@@ -102,4 +102,36 @@ describe('assertDeletable + deleteSkillDir (upstream contract)', () => {
       expect.objectContaining({ status: 400, message: 'Not a skill path' }),
     )
   })
+
+  it('refuses a skill reached through a symlinked ancestor and leaves the real directory alone', () => {
+    const home = scratch()
+    const cabinet = path.join(home, '.claude', 'skills')
+    fs.mkdirSync(cabinet, { recursive: true })
+    const outside = path.join(home, 'Projects', 'my-skills')
+    const real = path.join(outside, 'alpha')
+    fs.mkdirSync(real, { recursive: true })
+    fs.writeFileSync(path.join(real, 'SKILL.md'), skillMarkdown())
+    fs.symlinkSync(outside, path.join(cabinet, 'shared'))
+    const roots = [{ root: cabinet }]
+    const through = path.join(cabinet, 'shared', 'alpha')
+
+    expect(() => assertSkillTarget({ path: through }, roots, 'quarantine', { home })).toThrow(
+      expect.objectContaining({ status: 403, message: 'Skill resolves outside known cabinet roots' }),
+    )
+    expect(() => assertDeletable({ path: through }, roots, { home })).toThrow(expect.objectContaining({ status: 403 }))
+    expect(fs.existsSync(path.join(real, 'SKILL.md'))).toBe(true)
+  })
+
+  it('still allows a skill whose own last segment is a symlink', () => {
+    const home = scratch()
+    const cabinet = path.join(home, '.claude', 'skills')
+    fs.mkdirSync(cabinet, { recursive: true })
+    const real = path.join(home, 'Projects', 'my-skills', 'beta')
+    fs.mkdirSync(real, { recursive: true })
+    fs.writeFileSync(path.join(real, 'SKILL.md'), skillMarkdown())
+    const link = path.join(cabinet, 'beta')
+    fs.symlinkSync(real, link)
+
+    expect(assertDeletable({ path: link }, [{ root: cabinet }], { home })).toBe(link)
+  })
 })
