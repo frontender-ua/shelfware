@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Root } from '../../shared/types/catalog'
-import { scanRoots } from '../../server/utils/scan'
+import { discoverRoots, scanRoots } from '../../server/utils/scan'
 import { skillText, tempDir, writeSkill, writeTextFile } from '../helpers/fixture-home'
 
 const cleanups: (() => void)[] = []
@@ -41,5 +41,20 @@ describe('a recursive drawer that is also deep', () => {
     writeTextFile(path.join(dir, 'plugins', 'mart', 'docs', 'guide.md'), skillText('guide', 'also not a skill'))
     const index = scanRoots([pluginRoot(path.join(dir, 'plugins'))], { home: dir })
     expect(index.skills.map(s => s.slug)).toEqual(['nested-one'])
+  })
+})
+
+describe('generic $HOME drawers', () => {
+  it('finds skills nested below the drawer, including under dot directories', () => {
+    const dir = home('shelfware-generic-')
+    writeSkill(path.join(dir, '.codex', 'skills', '.system', 'skill-creator'), skillText('skill-creator', 'a codex system skill'))
+    writeSkill(path.join(dir, '.agents', 'skills', 'misc', 'agent-nested'), skillText('agent-nested', 'grouped by category'))
+    writeSkill(path.join(dir, '.agents', 'skills', 'flat-one'), skillText('flat-one', 'straight in the drawer'))
+
+    const roots = discoverRoots({ home: dir })
+    expect(roots.find(r => r.scopeId === 'codex')?.deep).toBe(true)
+
+    const index = scanRoots(roots, { home: dir })
+    expect(index.skills.map(s => s.slug).sort()).toEqual(['agent-nested', 'flat-one', 'skill-creator'])
   })
 })

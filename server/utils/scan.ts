@@ -188,8 +188,10 @@ export function discoverRoots(opts?: HomeOptions): Root[] {
     const base = path.join(home, entry.name)
     const scopeId = entry.name.slice(1)
 
+    // deep: tools nest skills by category or under a dot directory
+    // (`~/.codex/skills/.system/<skill>`, `skills/<category>/<skill>`).
     for (const folder of ['skills', 'skill']) {
-      add(scopeId, entry.name, path.join(base, folder), 'user', false)
+      add(scopeId, entry.name, path.join(base, folder), 'user', false, true)
     }
 
     if (entry.name === '.cursor') {

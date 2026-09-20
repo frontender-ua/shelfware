@@ -114,7 +114,7 @@ describe('discoverRoots', () => {
     const byId = new Map(roots.map(r => [r.scopeId, r]))
 
     expect(byId.get('claude')).toEqual({
-      scopeId: 'claude', scopeLabel: '.claude', root: path.join(home, '.claude', 'skills'), kind: 'user', recursive: false, deep: false,
+      scopeId: 'claude', scopeLabel: '.claude', root: path.join(home, '.claude', 'skills'), kind: 'user', recursive: false, deep: true,
     })
     expect(byId.get('codex')?.root).toBe(path.join(home, '.codex', 'skills'))
     expect(byId.get('cursor-builtin')).toMatchObject({ scopeLabel: '.cursor/skills-cursor', kind: 'builtin', recursive: false })
